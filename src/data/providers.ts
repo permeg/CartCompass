@@ -2,15 +2,18 @@
  * The seam between the app and the outside world.
  *
  * The optimizer and UI only ever see a `Market`. This file builds one from a set
- * of providers, and the demo providers below are backed by `seed.ts`. To go live,
- * write providers that call real APIs and swap them into `activeProviders`
- * (see ROADMAP.md). Nothing else should need to change.
+ * of providers. `demoProviders` are backed by `seed.ts`; `liveProviders` use real
+ * Kroger stores and prices through our proxy. Each real data source that lands
+ * (see ROADMAP.md) replaces one demo provider inside `liveProviders`.
  */
 import { haversineMiles } from '../domain/geo';
-import type { Category, LatLon, Market, Product, Store } from '../domain/types';
+import type { CartLine, Category, DataSources, LatLon, Market, Product, Store } from '../domain/types';
+import { liveStores, livePrices } from './krogerClient';
+import { LIVE_QUICK_ADDS, LIVE_SAMPLE_CART } from './liveSample';
 import { remoteCatalog } from './remoteCatalog';
 import {
   DEMO_CATALOG,
+  SAMPLE_CART,
   SEED_GAS_PRICE_CENTS,
   SEED_PRICES_AS_OF,
   SEED_PRODUCTS,
@@ -23,6 +26,8 @@ import {
 export interface LocalCatalog {
   list(): Product[];
   find(id: string): Product | undefined;
+  /** One-tap adds shown when the list is empty. */
+  quickAdds(): Product[];
 }
 
 /** Product search over the network, through our own proxy. */
@@ -56,8 +61,11 @@ export interface RoutingProvider {
 }
 
 export interface Providers {
-  source: Market['source'];
+  /** Which parts of the data are real. Drives the badge in the UI. */
+  sources: DataSources;
   catalog: { local: LocalCatalog; remote: RemoteCatalog | null };
+  /** What a first-time visitor's list starts with. */
+  sampleCart(): CartLine[];
   stores: StoreProvider;
   prices: PriceProvider;
   gas: GasProvider;
@@ -108,11 +116,18 @@ function shelfPrice(store: SeedStore, product: Product): number | undefined {
 const ROAD_FACTOR = 1.3;
 const AVERAGE_MPH = 24;
 
-const demoCatalog: LocalCatalog = { list: () => DEMO_CATALOG, find: findDemoProduct };
+const DEMO_QUICK_ADDS = ['eggs-12', 'milk-whole', 'bread', 'bananas', 'oats', 'coffee'];
+
+const demoCatalog: LocalCatalog = {
+  list: () => DEMO_CATALOG,
+  find: findDemoProduct,
+  quickAdds: () => DEMO_QUICK_ADDS.map(findDemoProduct).filter((p): p is Product => !!p),
+};
 
 export const demoProviders: Providers = {
-  source: 'demo',
+  sources: { stores: 'demo', prices: 'demo', routing: 'demo', gas: 'demo' },
   catalog: { local: demoCatalog, remote: null },
+  sampleCart: () => SAMPLE_CART,
   stores: {
     async storesNear(origin, radiusMiles) {
       return SEED_STORES.filter((s) => haversineMiles(origin, s) * ROAD_FACTOR <= radiusMiles).map(
@@ -145,25 +160,43 @@ export const demoProviders: Providers = {
 };
 
 /**
- * Prices, stores, gas and routing are still demo data. With `npm run dev:live`
- * the product search also queries the real catalog through `/api/catalog/search`,
- * and any product found that way gets an invented price until step 3 of the
- * roadmap replaces the price provider.
+ * Real Kroger-family stores (QFC, Fred Meyer) and real shelf prices, searched
+ * through Kroger's product catalog. Drive times and gas are still estimates
+ * until roadmap steps 4 and 5.
  */
-export const activeProviders: Providers = {
+export const liveProviders: Providers = {
   ...demoProviders,
+  sources: { stores: 'live', prices: 'live', routing: 'demo', gas: 'demo' },
   catalog: {
-    local: demoCatalog,
-    remote: import.meta.env.VITE_LIVE_CATALOG === 'true' ? remoteCatalog : null,
+    // Demo products have no barcode, so they can't be priced live.
+    local: { list: () => [], find: () => undefined, quickAdds: () => LIVE_QUICK_ADDS },
+    remote: remoteCatalog,
   },
+  sampleCart: () => LIVE_SAMPLE_CART,
+  stores: liveStores,
+  prices: livePrices,
 };
+
+export type DataMode = 'live' | 'demo';
+
+/**
+ * Pick the providers for a mode. The older `dev:live` switch (VITE_LIVE_CATALOG) still
+ * gives the demo data a real catalog to search, for servers with no Kroger keys.
+ */
+export function providersFor(mode: DataMode): Providers {
+  if (mode === 'live') return liveProviders;
+  if (import.meta.env.VITE_LIVE_CATALOG === 'true') {
+    return { ...demoProviders, catalog: { local: demoCatalog, remote: remoteCatalog } };
+  }
+  return demoProviders;
+}
 
 /** Gather everything the optimizer needs for this origin and set of products. */
 export async function loadMarket(
   origin: LatLon,
   products: Product[],
   radiusMiles: number,
-  providers: Providers = activeProviders,
+  providers: Providers,
 ): Promise<Market> {
   // Ask for a wider ring than the user's radius so a bigger radius doesn't need a refetch.
   const stores = await providers.stores.storesNear(origin, Math.max(radiusMiles, 15));
@@ -183,7 +216,7 @@ export async function loadMarket(
     miles,
     minutes,
     requested: new Set(products.map((p) => p.id)),
-    source: providers.source,
+    sources: providers.sources,
     pricesAsOf: asOf,
   };
 }

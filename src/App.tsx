@@ -7,9 +7,9 @@ import { planOptions, savingsVsBaseline } from './components/planOptions';
 import { ShoppingList } from './components/ShoppingList';
 import { TripSettings } from './components/TripSettings';
 import { miles, money } from './domain/format';
-import { activeProviders } from './data/providers';
+import { providersFor, type DataMode } from './data/providers';
 import { NEIGHBORHOODS } from './data/seed';
-import { useAppState } from './state/appState';
+import { useAppState, type Action, type AppState } from './state/appState';
 import { usePlanner } from './state/usePlanner';
 
 type Tab = 'basket' | 'trip' | 'map' | 'store';
@@ -25,10 +25,65 @@ function useMediaQuery(query: string): boolean {
   return matches;
 }
 
+interface Capabilities {
+  /** The server can look up real Kroger stores and prices. */
+  livePrices: boolean;
+}
+
+/** Ask the server what it can do. A static host or an offline server means demo only. */
+function useCapabilities(): Capabilities | null {
+  const [caps, setCaps] = useState<Capabilities | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/health', { signal: AbortSignal.timeout(3000) })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((body: { ok?: boolean; livePrices?: boolean }) => {
+        if (!cancelled) setCaps({ livePrices: body.ok === true && body.livePrices === true });
+      })
+      .catch(() => {
+        if (!cancelled) setCaps({ livePrices: false });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return caps;
+}
+
 export default function App() {
   const [state, dispatch] = useAppState();
-  const planner = usePlanner(state);
-  const { settings, cart, checked } = state;
+  const caps = useCapabilities();
+  // Live data is the default whenever the server supports it. Otherwise fall back to demo.
+  const effective: DataMode = caps?.livePrices ? state.preferred : 'demo';
+
+  useEffect(() => {
+    if (caps) dispatch({ type: 'activate', mode: effective });
+  }, [caps, effective, dispatch]);
+
+  if (!caps || state.mode !== effective) {
+    return (
+      <div className="splash" role="status">
+        <Compass size={28} strokeWidth={1.4} aria-hidden="true" />
+        <span>Loading Cart Compass…</span>
+      </div>
+    );
+  }
+  // Keyed by mode so tabs and pinned comparisons start fresh when switching.
+  return <Workspace key={effective} state={state} dispatch={dispatch} mode={effective} canGoLive={caps.livePrices} />;
+}
+
+interface WorkspaceProps {
+  state: AppState;
+  dispatch: (a: Action) => void;
+  mode: DataMode;
+  canGoLive: boolean;
+}
+
+function Workspace({ state, dispatch, mode, canGoLive }: WorkspaceProps) {
+  const providers = useMemo(() => providersFor(mode), [mode]);
+  const cart = state.carts[mode];
+  const { settings, checked } = state;
+  const planner = usePlanner(cart, settings, providers);
   const isDesktop = useMediaQuery('(min-width: 1024px)');
 
   const [pinnedId, setPinnedId] = useState<string | null>(null);
@@ -54,7 +109,8 @@ export default function App() {
   const cartPanel = (
     <CartPanel
       cart={cart}
-      catalog={activeProviders.catalog}
+      catalog={providers.catalog}
+      sampleCart={providers.sampleCart()}
       market={planner.market}
       unavailableIds={unavailableIds}
       dispatch={dispatch}
@@ -72,6 +128,7 @@ export default function App() {
       cartEmpty={cart.length === 0}
       loading={planner.loading}
       error={planner.error}
+      onRetry={planner.retry}
       dispatch={dispatch}
       activeStoreId={activeStoreId}
       onActiveStore={setActiveStoreId}
@@ -100,6 +157,22 @@ export default function App() {
         <span>Cart Compass</span>
       </div>
       <div className="topbar-actions">
+        {canGoLive && (
+          <div className="segmented segmented--tiny" role="radiogroup" aria-label="Data source">
+            {(['live', 'demo'] as const).map((m) => (
+              <button
+                key={m}
+                role="radio"
+                aria-checked={mode === m}
+                className={mode === m ? 'is-on' : ''}
+                title={m === 'live' ? 'Real QFC and Fred Meyer prices' : 'Invented stores and prices, for trying the app'}
+                onClick={() => dispatch({ type: 'choose', mode: m })}
+              >
+                {m === 'live' ? 'Live' : 'Demo'}
+              </button>
+            ))}
+          </div>
+        )}
         <label className="place">
           <span className="sr-only">Starting point</span>
           <select value={settings.homeId} onChange={(e) => dispatch({ type: 'settings', patch: { homeId: e.target.value } })}>

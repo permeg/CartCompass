@@ -109,6 +109,10 @@ button {
   text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
   margin-top: 14px;
 }
+.tag--live {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+}
 .tag {
   font: 500 11px/1 var(--mono);
   letter-spacing: 0.04em;
@@ -1130,4 +1134,42 @@ input[type='range']::-moz-range-thumb {
   * {
     transition: none !important;
   }
+}
+
+.chip-label {
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.splash {
+  min-height: 100dvh;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 14px;
+  color: var(--text-3);
+}
+.splash svg {
+  color: var(--accent);
+}
+.segmented--tiny {
+  margin-top: 0;
+  padding: 2px;
+  gap: 2px;
+}
+.segmented--tiny button {
+  min-height: 30px;
+  padding: 0 12px;
+  font-size: 12.5px;
+}
+@media (max-width: 1023px) {
+  .segmented--tiny button {
+    min-height: 40px;
+  }
+}
+
+.link--inline {
+  display: inline;
+  margin: 0 0 0 4px;
 }

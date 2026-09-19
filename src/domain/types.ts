@@ -36,6 +36,8 @@ export interface Store extends LatLon {
   id: string;
   name: string;
   blurb: string;
+  /** Retail chain, e.g. "QFC". Missing for the invented demo stores. */
+  chain?: string;
   /** Prices only apply to members. Excluded unless the user opts in. */
   membership?: boolean;
 }
@@ -70,9 +72,20 @@ export interface Market {
   minutes: number[][];
   /** The product ids these prices were fetched for. */
   requested: ReadonlySet<string>;
-  source: 'demo' | 'live';
+  /** Which parts of this market are real. Anything 'demo' is invented or estimated. */
+  sources: DataSources;
   /** ISO timestamp of the price snapshot, if known. */
   pricesAsOf: string | null;
+}
+
+export type DataSource = 'demo' | 'live';
+
+export interface DataSources {
+  stores: DataSource;
+  prices: DataSource;
+  /** Drive distances and times. */
+  routing: DataSource;
+  gas: DataSource;
 }
 
 export interface PlanOptions {

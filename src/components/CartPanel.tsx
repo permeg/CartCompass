@@ -6,8 +6,6 @@ import { searchCatalog } from '../domain/search';
 import type { CartLine, Market, Product } from '../domain/types';
 import type { Action } from '../state/appState';
 
-const QUICK_ADDS = ['eggs-12', 'milk-whole', 'bread', 'bananas', 'oats', 'coffee'];
-
 function lowestPrice(market: Market | null, productId: string): number | null {
   if (!market) return null;
   const all = Object.values(market.prices)
@@ -50,12 +48,13 @@ function useRemoteSearch(query: string, remote: RemoteCatalog | null): RemoteSta
 interface Props {
   cart: CartLine[];
   catalog: { local: LocalCatalog; remote: RemoteCatalog | null };
+  sampleCart: CartLine[];
   market: Market | null;
   unavailableIds: Set<string>;
   dispatch: (a: Action) => void;
 }
 
-export function CartPanel({ cart, catalog, market, unavailableIds, dispatch }: Props) {
+export function CartPanel({ cart, catalog, sampleCart, market, unavailableIds, dispatch }: Props) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -157,7 +156,7 @@ export function CartPanel({ cart, catalog, market, unavailableIds, dispatch }: P
                   {remote.status === 'loading'
                     ? 'Searching the product catalog…'
                     : remote.status === 'error'
-                      ? 'Couldn’t reach the product catalog. Showing demo items only.'
+                      ? `Couldn’t reach the product catalog. ${local.length > 0 ? 'Showing built-in items only.' : 'Try again in a moment.'}`
                       : remoteOnly.length > 0
                         ? 'More from the product catalog'
                         : local.length > 0
@@ -168,7 +167,7 @@ export function CartPanel({ cart, catalog, market, unavailableIds, dispatch }: P
               </>
             )}
 
-            {!catalog.remote && local.length === 0 && (
+            {!catalog.remote && local.length === 0 && catalog.local.list().length > 0 && (
               <li className="search-none" role="presentation">
                 Not in the demo catalog of {catalog.local.list().length} items. Try a simpler word, like “milk”.
               </li>
@@ -182,17 +181,13 @@ export function CartPanel({ cart, catalog, market, unavailableIds, dispatch }: P
           <p className="empty-title">Start your list</p>
           <p className="muted">Add what you need this week. We’ll work out which stores are worth the drive.</p>
           <div className="chips" aria-label="Quick add">
-            {QUICK_ADDS.map((id) => {
-              const p = catalog.local.find(id);
-              if (!p) return null;
-              return (
-                <button key={id} className="chip" onClick={() => dispatch({ type: 'add', product: p })}>
-                  <Plus size={13} aria-hidden="true" /> {p.name}
-                </button>
-              );
-            })}
+            {catalog.local.quickAdds().map((p) => (
+              <button key={p.id} className="chip" onClick={() => dispatch({ type: 'add', product: p })}>
+                <Plus size={13} aria-hidden="true" /> <span className="chip-label" title={p.name}>{p.name}</span>
+              </button>
+            ))}
           </div>
-          <button className="link" onClick={() => dispatch({ type: 'sample' })}>
+          <button className="link" onClick={() => dispatch({ type: 'sample', cart: sampleCart })}>
             Or load a sample list
           </button>
         </div>

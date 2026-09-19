@@ -230,7 +230,7 @@ describe('provider selection and health', () => {
     process.env.KROGER_CLIENT_ID = 'test-id';
     process.env.KROGER_CLIENT_SECRET = 'test-secret';
     const text = await (await health(new Request('http://localhost/api/health'), process.env)).text();
-    expect(JSON.parse(text)).toEqual({ ok: true, catalog: 'kroger' });
+    expect(JSON.parse(text)).toEqual({ ok: true, catalog: 'kroger', livePrices: true });
     expect(text).not.toContain('test-');
   });
 });

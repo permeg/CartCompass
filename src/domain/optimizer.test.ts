@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadMarket } from '../data/providers';
+import { demoProviders, loadMarket } from '../data/providers';
 import { SAMPLE_CART, SEED_PRODUCTS, NEIGHBORHOODS } from '../data/seed';
 import { limitDriveTime, maxUsefulFlex, planTrips, recommend } from './optimizer';
 import type { CartLine, Market, PlanOptions, Product, Store } from './types';
@@ -36,7 +36,7 @@ function lineMarket(
     miles,
     minutes: miles.map((r) => r.map((m) => m * 2)),
     requested: new Set(['eggs', 'milk', 'oats']),
-    source: 'demo',
+    sources: { stores: 'demo', prices: 'demo', routing: 'demo', gas: 'demo' },
     pricesAsOf: null,
   };
 }
@@ -260,6 +260,7 @@ describe('demo data', () => {
       home,
       SAMPLE_CART.map((l) => l.product),
       12,
+      demoProviders,
     );
     const catalog = new Map(SEED_PRODUCTS.map((p) => [p.id, p as Product]));
     const set = planTrips(SAMPLE_CART, catalog, market, {

@@ -1,4 +1,6 @@
 import { useEffect, useReducer } from 'react';
+import { LIVE_SAMPLE_CART } from '../data/liveSample';
+import type { DataMode } from '../data/providers';
 import { DEFAULT_NEIGHBORHOOD, SAMPLE_CART, findDemoProduct } from '../data/seed';
 import type { CartLine, Mode, Product } from '../domain/types';
 
@@ -18,7 +20,15 @@ export interface Settings {
 }
 
 export interface AppState {
-  cart: CartLine[];
+  /**
+   * Live and demo data use different products (only live ones have barcodes a
+   * store can price), so each keeps its own list.
+   */
+  carts: Record<DataMode, CartLine[]>;
+  /** Which list is being shown right now. */
+  mode: DataMode;
+  /** What the user picked. `mode` follows it whenever live data is available. */
+  preferred: DataMode;
   settings: Settings;
   /** `${storeId}:${productId}` for every ticked shopping-list row. */
   checked: string[];
@@ -29,7 +39,11 @@ export type Action =
   | { type: 'setQty'; productId: string; qty: number }
   | { type: 'remove'; productId: string }
   | { type: 'clear' }
-  | { type: 'sample' }
+  | { type: 'sample'; cart: CartLine[] }
+  /** The user chose live or demo. */
+  | { type: 'choose'; mode: DataMode }
+  /** Live data isn't available here, so fall back without forgetting the choice. */
+  | { type: 'activate'; mode: DataMode }
   | { type: 'settings'; patch: Partial<Settings> }
   | { type: 'toggleChecked'; key: string }
   | { type: 'clearChecked' };
@@ -46,7 +60,8 @@ export const DEFAULT_SETTINGS: Settings = {
   includeMembership: false,
 };
 
-const STORAGE_KEY = 'cart-compass:v1';
+const STORAGE_KEY = 'cart-compass:v2';
+const LEGACY_KEY = 'cart-compass:v1';
 
 /**
  * Lists saved before cart lines carried their own product only have an id. Look
@@ -60,47 +75,78 @@ function migrateCart(lines: Partial<CartLine>[]): CartLine[] {
   });
 }
 
+function fresh(): AppState {
+  return {
+    carts: { live: LIVE_SAMPLE_CART, demo: SAMPLE_CART },
+    mode: 'live',
+    preferred: 'live',
+    settings: DEFAULT_SETTINGS,
+    checked: [],
+  };
+}
+
 function initialState(): AppState {
-  const fresh: AppState = { cart: SAMPLE_CART, settings: DEFAULT_SETTINGS, checked: [] };
+  const base = fresh();
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return fresh;
-    const saved = JSON.parse(raw) as Partial<AppState>;
-    return {
-      cart: Array.isArray(saved.cart) ? migrateCart(saved.cart) : fresh.cart,
-      settings: { ...DEFAULT_SETTINGS, ...saved.settings },
-      checked: Array.isArray(saved.checked) ? saved.checked : [],
-    };
+    if (raw) {
+      const saved = JSON.parse(raw) as Partial<AppState>;
+      const pick = (m: DataMode) => (Array.isArray(saved.carts?.[m]) ? migrateCart(saved.carts![m]) : base.carts[m]);
+      const preferred = saved.preferred === 'demo' ? 'demo' : 'live';
+      return {
+        carts: { live: pick('live'), demo: pick('demo') },
+        mode: preferred,
+        preferred,
+        settings: { ...DEFAULT_SETTINGS, ...saved.settings },
+        checked: Array.isArray(saved.checked) ? saved.checked : [],
+      };
+    }
+    // Lists from before live data existed become the demo list.
+    const legacy = localStorage.getItem(LEGACY_KEY);
+    if (legacy) {
+      const old = JSON.parse(legacy) as { cart?: Partial<CartLine>[]; settings?: Partial<Settings>; checked?: string[] };
+      return {
+        ...base,
+        carts: { live: base.carts.live, demo: Array.isArray(old.cart) ? migrateCart(old.cart) : base.carts.demo },
+        settings: { ...DEFAULT_SETTINGS, ...old.settings },
+        checked: Array.isArray(old.checked) ? old.checked : [],
+      };
+    }
   } catch {
-    return fresh;
+    /* unreadable saved state: start fresh */
   }
+  return base;
 }
 
 function reducer(state: AppState, action: Action): AppState {
+  const cart = state.carts[state.mode];
+  const withCart = (next: CartLine[]): AppState => ({ ...state, carts: { ...state.carts, [state.mode]: next } });
+
   switch (action.type) {
     case 'add': {
-      const existing = state.cart.find((l) => l.productId === action.product.id);
-      const cart = existing
-        ? state.cart.map((l) => (l === existing ? { ...l, qty: Math.min(l.qty + 1, 99) } : l))
-        : [...state.cart, { productId: action.product.id, qty: 1, product: action.product }];
-      return { ...state, cart };
+      const existing = cart.find((l) => l.productId === action.product.id);
+      return withCart(
+        existing
+          ? cart.map((l) => (l === existing ? { ...l, qty: Math.min(l.qty + 1, 99) } : l))
+          : [...cart, { productId: action.product.id, qty: 1, product: action.product }],
+      );
     }
     case 'setQty':
-      return {
-        ...state,
-        cart:
-          action.qty <= 0
-            ? state.cart.filter((l) => l.productId !== action.productId)
-            : state.cart.map((l) =>
-                l.productId === action.productId ? { ...l, qty: Math.min(action.qty, 99) } : l,
-              ),
-      };
+      return withCart(
+        action.qty <= 0
+          ? cart.filter((l) => l.productId !== action.productId)
+          : cart.map((l) => (l.productId === action.productId ? { ...l, qty: Math.min(action.qty, 99) } : l)),
+      );
     case 'remove':
-      return { ...state, cart: state.cart.filter((l) => l.productId !== action.productId) };
+      return withCart(cart.filter((l) => l.productId !== action.productId));
     case 'clear':
-      return { ...state, cart: [], checked: [] };
+      return { ...withCart([]), checked: [] };
     case 'sample':
-      return { ...state, cart: SAMPLE_CART, checked: [] };
+      return { ...withCart(action.cart), checked: [] };
+    case 'choose':
+      return { ...state, mode: action.mode, preferred: action.mode, checked: [] };
+    case 'activate':
+      return state.mode === action.mode ? state : { ...state, mode: action.mode, checked: [] };
     case 'settings':
       return { ...state, settings: { ...state.settings, ...action.patch } };
     case 'toggleChecked':

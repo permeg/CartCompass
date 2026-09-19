@@ -17,9 +17,9 @@ List, trip plan, mode toggle with extra-cost limit and drive-time limit, chart m
 Goal: replace the seeded data with real providers, one piece at a time. The demo data stays as a fallback and as the portfolio mode, and the "Demo data" tag stays until every piece below is live.
 
 1. [x] **Serverless proxy.** API keys can't live in the browser. Handlers in `server/`, served by Vite in dev and as Cloudflare Pages Functions in `functions/`.
-2. [x] **Live catalog search.** Product search from a real catalog (Kroger when keys are set, otherwise Open Food Facts). `CatalogProvider` is async, and cart lines store the product details they were added with. Opt in with `npm run dev:live`.
-3. [ ] **Real prices.** Kroger product pricing by store location (QFC and Fred Meyer cover Bellevue). Chains with no public API need a decision: hide them, or label them "estimated".
-4. [ ] **Real stores and drive distances.** OpenRouteService (free key): geocoding for address and ZIP lookup, and a distance matrix and directions for drive times and the route line. Needs an attribution line. Also browser geolocation, and drawing the real route on the chart instead of curved lines.
+2. [x] **Live catalog search.** Product search from a real catalog (Kroger when keys are set, otherwise Open Food Facts). `CatalogProvider` is async, and cart lines store the product details they were added with. Live search is on whenever live mode is on.
+3. [x] **Real prices and real stores.** Kroger's Locations and Products APIs through the proxy (`/api/stores`, `/api/prices`). Live mode is the default whenever the server has Kroger keys, with a Live/Demo switch in the header. Each mode keeps its own list. Only Kroger-family stores (QFC, Fred Meyer) have public prices, so other chains aren't included.
+4. [ ] **Drive distances and addresses.** OpenRouteService (free key): geocoding for address and ZIP lookup, and a distance matrix and directions for drive times and the route line. Needs an attribution line. Also browser geolocation, and drawing the real route on the chart instead of curved lines.
 5. [ ] **Real gas prices.** EIA regional average, with the user's override kept.
 
 Cross-cutting, do alongside the steps above:
@@ -27,7 +27,9 @@ Cross-cutting, do alongside the steps above:
 - [ ] Show "updated X ago" on prices once they are live, and keep the "Demo data" tag until step 5 is done.
 - [ ] Failure modes real data introduces: missing items, stale prices, rate limits, chains with no data.
 - [ ] Store names in the demo are fictional. Real chains need real names, hours, and logos or plain text.
-- [ ] Until step 3 lands, products from the live catalog have **invented** prices (from a reference price or a category default). This is why the tag stays.
+- [x] Live-mode prices are real. Demo mode still uses invented prices, and the badge says which one you're looking at ("Live prices" now; "Live data" once steps 4 and 5 land).
+- [ ] Real prices only exist for Kroger-family stores, and every QFC shares one price list, so live trips are mostly "QFC or Fred Meyer". A second price source would make multi-store trips more interesting. No legitimate public API exists for the other big chains.
+- [ ] Kroger's terms: confirm what they allow for caching prices and showing them on a public site.
 
 ## Deployment target
 

@@ -4,8 +4,8 @@ Build a grocery list and Cart Compass works out the cheapest way to shop it: whi
 (up to three), what to buy where, and whether the drive is worth it once gas is counted. Switch to
 "Save time" and it finds the quickest trip that costs no more than a limit you set.
 
-**Demo data.** Stores, prices and gas in this version are seeded sample data for Bellevue, WA. They are
-invented, and the UI says so. See [ROADMAP.md](ROADMAP.md) for the plan to use real providers.
+**Data.** Live mode uses real Kroger-family prices. Demo mode uses invented Bellevue stores and prices,
+and the UI labels which one you're looking at. See [ROADMAP.md](ROADMAP.md) for what's real so far.
 
 ## Run it
 
@@ -16,17 +16,18 @@ npm run dev
 
 Other scripts: `npm test`, `npm run typecheck`, `npm run build`.
 
-### Live product search
+### Live data
 
-`npm run dev:live` also searches a real product catalog when you type in the list. It goes through
-a small proxy in `server/` (served by Vite in dev, and as Cloudflare Pages Functions from `functions/` in production),
-so API keys never reach the browser.
+When the server has Kroger API keys, the app defaults to **live mode**: real QFC and Fred Meyer stores
+near you, real shelf prices, and product search from Kroger's catalog. A Live/Demo switch in the header
+flips to invented demo data, which keeps its own list. With no keys (or on a static host) the app runs
+in demo mode only.
 
-- With no keys it uses [Open Food Facts](https://world.openfoodfacts.org), limited to US products.
-- To use Kroger's catalog instead, copy `.env.example` to `.env.local` and add your Kroger developer
-  keys. The Kroger adapter is written from their docs and hasn't been run against the live API yet.
-- Products found this way still get **invented prices** until real pricing lands (ROADMAP, step 3).
-- Plain `npm run dev` and any static deploy stay demo-only and make no network calls.
+- Copy `.env.example` to `.env.local` (git ignores it) and add `KROGER_CLIENT_ID` and `KROGER_CLIENT_SECRET`.
+  Never put secrets in `.env.live`: that file is committed.
+- Keys stay on the server. The browser only talks to `/api/*`: `catalog/search`, `stores`, `prices`, `health`.
+- Drive times and gas prices are still estimates (ROADMAP steps 4 and 5).
+- With no Kroger keys, `npm run dev:live` gives demo mode a real product search from Open Food Facts.
 
 ## How it works
 

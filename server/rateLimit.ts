@@ -4,10 +4,10 @@
  * the proxy if the app ever gets traffic worth protecting.
  */
 const WINDOW_MS = 60_000;
-const MAX_PER_WINDOW = 60;
+const DEFAULT_MAX = 60;
 const hits = new Map<string, { count: number; resetAt: number }>();
 
-export function allow(key: string, now = Date.now()): boolean {
+export function allow(key: string, max = DEFAULT_MAX, now = Date.now()): boolean {
   if (hits.size > 2000) {
     for (const [k, v] of hits) if (v.resetAt <= now) hits.delete(k);
   }
@@ -17,7 +17,7 @@ export function allow(key: string, now = Date.now()): boolean {
     return true;
   }
   entry.count += 1;
-  return entry.count <= MAX_PER_WINDOW;
+  return entry.count <= max;
 }
 
 export function resetRateLimit(): void {

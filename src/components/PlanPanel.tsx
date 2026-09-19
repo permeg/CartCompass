@@ -1,6 +1,6 @@
 import { Check } from 'lucide-react';
 import { miles, minutes, money, moneyShort, plural } from '../domain/format';
-import type { Market, Mode, Plan, PlanSet } from '../domain/types';
+import type { DataSources, Market, Mode, Plan, PlanSet } from '../domain/types';
 import type { Action, Settings } from '../state/appState';
 import { planOptions, savingsVsBaseline } from './planOptions';
 
@@ -15,6 +15,7 @@ interface Props {
   cartEmpty: boolean;
   loading: boolean;
   error: string | null;
+  onRetry: () => void;
   dispatch: (a: Action) => void;
   activeStoreId: string | null;
   onActiveStore: (id: string | null) => void;
@@ -27,21 +28,24 @@ export function PlanPanel(props: Props) {
     <section className="panel-body" aria-labelledby="plan-heading">
       <div className="panel-head">
         <h2 id="plan-heading">Your trip</h2>
-        {props.market?.source === 'demo' && (
-          <span className="tag" title="Stores, prices and gas are sample data for this demo.">
-            Demo data
-          </span>
-        )}
+        <DataBadge sources={props.market?.sources} />
       </div>
 
-      {error && <p className="notice notice--warn">{error}</p>}
+      {error && (
+        <p className="notice notice--warn" role="alert">
+          {error}{' '}
+          <button className="link link--inline" onClick={props.onRetry}>
+            Try again
+          </button>
+        </p>
+      )}
 
       <ModeControl {...props} />
 
       {cartEmpty ? (
         <p className="empty-plan">Add a few items to your list and your route will show up here.</p>
       ) : !planSet || !recommended || !shown ? (
-        <PlanEmpty planSet={planSet} loading={props.loading} settings={settings} />
+        error ? null : <PlanEmpty planSet={planSet} loading={props.loading} settings={settings} />
       ) : (
         <>
           <Hero planSet={planSet} plan={shown} />
@@ -54,20 +58,60 @@ export function PlanPanel(props: Props) {
             </p>
           )}
           <Compare {...props} planSet={planSet} recommended={recommended} shown={shown} />
-          <p className="footnote">
-            Distances are estimated road miles. Gas at {money(settings.gasPriceOverride ?? props.market?.gasPrice ?? 0)}/gal
-            and {settings.mpg} mpg.
-            {props.market?.pricesAsOf && (
-              <>
-                {' '}
-                Prices as of{' '}
-                {new Date(props.market.pricesAsOf).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}.
-              </>
-            )}
-          </p>
+          <Footnote market={props.market} settings={settings} />
         </>
       )}
     </section>
+  );
+}
+
+function DataBadge({ sources }: { sources: DataSources | undefined }) {
+  if (!sources) return null;
+  if (Object.values(sources).every((s) => s === 'live')) {
+    return (
+      <span className="tag tag--live" title="Stores, prices, drive times and gas are all real.">
+        Live data
+      </span>
+    );
+  }
+  if (sources.prices === 'live') {
+    return (
+      <span
+        className="tag tag--live"
+        title="Stores and prices are real (QFC and Fred Meyer). Drive times and gas prices are estimates."
+      >
+        Live prices
+      </span>
+    );
+  }
+  return (
+    <span className="tag" title="Stores, prices and gas are sample data for this demo.">
+      Demo data
+    </span>
+  );
+}
+
+function Footnote({ market, settings }: { market: Market | null; settings: Settings }) {
+  if (!market) return null;
+  const live = market.sources.prices === 'live';
+  const asOf = market.pricesAsOf ? new Date(market.pricesAsOf) : null;
+  return (
+    <p className="footnote">
+      Distances are estimated road miles. Gas is {money(settings.gasPriceOverride ?? market.gasPrice)}/gal
+      {market.sources.gas === 'demo' && settings.gasPriceOverride === null ? ' (an estimate)' : ''} at {settings.mpg} mpg.
+      {live ? (
+        <>
+          {' '}
+          Prices come from Kroger’s API for QFC and Fred Meyer
+          {asOf ? `, as of ${asOf.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : ''}. Sale prices may
+          need the store’s loyalty card. Other chains don’t publish prices, so they aren’t included.
+        </>
+      ) : (
+        asOf && (
+          <> Prices as of {asOf.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}. These are sample prices.</>
+        )
+      )}
+    </p>
   );
 }
 
