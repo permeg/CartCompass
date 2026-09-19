@@ -25,6 +25,19 @@ export function startingPlace(mode: DataMode, settings: Settings): Place {
   return mode === 'live' ? settings.home : (NEIGHBORHOODS.find((n) => n.id === settings.demoHomeId) ?? NEIGHBORHOODS[0]);
 }
 
+/**
+ * The closest real store by driving distance. Live product search is limited to what this
+ * store sells, so people only find things they can actually buy nearby.
+ */
+export function nearestStoreId(market: Market | null): string | undefined {
+  if (!market || market.sources.stores !== 'live' || market.stores.length === 0) return undefined;
+  let best = 0;
+  for (let i = 1; i < market.stores.length; i++) {
+    if (market.miles[0][i + 1] < market.miles[0][best + 1]) best = i;
+  }
+  return market.stores[best].id;
+}
+
 interface Loaded {
   market: Market;
   providers: Providers;

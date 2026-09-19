@@ -39,12 +39,24 @@ const cache = new Map<string, Product[]>();
  * its content as long as its cache header permits (and it sends none).
  */
 export const remoteCatalog: RemoteCatalog = {
-  async search(query, signal) {
-    const key = query.trim().toLowerCase();
+  async starter(storeId) {
+    const res = await fetch(`/api/starter?store=${encodeURIComponent(storeId)}`);
+    if (!res.ok) throw new Error(`Starter list failed (${res.status})`);
+    const body = (await res.json()) as { items?: { product?: unknown; qty?: unknown }[] };
+    return (body.items ?? []).flatMap((item) => {
+      const product = toProduct(item.product);
+      const qty = typeof item.qty === 'number' && item.qty >= 1 && item.qty <= 99 ? Math.round(item.qty) : 1;
+      return product ? [{ productId: product.id, qty, product }] : [];
+    });
+  },
+
+  async search(query, signal, storeId) {
+    const key = `${storeId ?? ''}|${query.trim().toLowerCase()}`;
     const hit = cache.get(key);
     if (hit) return hit;
 
-    const res = await fetch(`/api/catalog/search?q=${encodeURIComponent(query.trim())}`, { signal });
+    const store = storeId ? `&store=${encodeURIComponent(storeId)}` : '';
+    const res = await fetch(`/api/catalog/search?q=${encodeURIComponent(query.trim())}${store}`, { signal });
     if (!res.ok) throw new Error(`Catalog search failed (${res.status})`);
     const body = (await res.json()) as { source?: string; products?: unknown[] };
     const products = (body.products ?? []).map(toProduct).filter((p): p is Product => p !== null);

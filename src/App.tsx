@@ -10,7 +10,7 @@ import { TripSettings } from './components/TripSettings';
 import { miles, money } from './domain/format';
 import { providersFor, type Capabilities, type DataMode } from './data/providers';
 import { useAppState, type Action, type AppState } from './state/appState';
-import { usePlanner } from './state/usePlanner';
+import { nearestStoreId, usePlanner } from './state/usePlanner';
 import { useRouteLine } from './state/useRouteLine';
 
 type Tab = 'basket' | 'trip' | 'map' | 'store';
@@ -114,6 +114,7 @@ function Workspace({ state, dispatch, mode, caps }: WorkspaceProps) {
       cart={cart}
       catalog={providers.catalog}
       sampleCart={providers.sampleCart()}
+      searchStoreId={nearestStoreId(planner.market)}
       market={planner.market}
       unavailableIds={unavailableIds}
       dispatch={dispatch}

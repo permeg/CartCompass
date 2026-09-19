@@ -4,7 +4,7 @@ import { isRateLimited } from './errors';
 import { clientId, error, json, type Env } from './http';
 import { pickCatalogSource, searchCatalog } from './providers';
 import { eiaConfig, eiaRegularGas, gasAreaFor } from './providers/eia';
-import { krogerConfig, krogerPrices, krogerStoresNear } from './providers/kroger';
+import { krogerConfig, krogerPrices, krogerStarter, krogerStoresNear } from './providers/kroger';
 import { orsConfig, orsGeocode, orsMatrix, orsRoute, orsState } from './providers/ors';
 import { allow } from './rateLimit';
 
@@ -31,6 +31,8 @@ const num = (v: string | null): number | null =>
 
 const validPoint = (lat: number, lon: number) => Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
 
+const STORE_ID = /^kroger:\d{8}$/;
+
 /* ---------- catalog ---------- */
 
 const MAX_QUERY = 60;
@@ -46,10 +48,14 @@ export async function catalogSearch(request: Request, env: Env): Promise<Respons
   if (q.length < 2) return error(400, 'query_too_short', 'Type at least two characters.');
   if (q.length > MAX_QUERY) return error(400, 'query_too_long', `Keep the search under ${MAX_QUERY} characters.`);
 
+  // Optional: only show products this Kroger-family store sells, with its prices.
+  const storeParam = new URL(request.url).searchParams.get('store');
+  if (storeParam !== null && !STORE_ID.test(storeParam)) return error(400, 'bad_store', 'Send a store id like kroger:70500808.');
+
   if (!allow(`search:${clientId(request)}`)) return error(429, 'rate_limited', 'Too many searches. Try again in a minute.');
 
   try {
-    const { source, products } = await searchCatalog(env, q, RESULT_LIMIT, AbortSignal.timeout(8000));
+    const { source, products } = await searchCatalog(env, q, RESULT_LIMIT, AbortSignal.timeout(8000), storeParam ?? undefined);
     return json({ source, products }, { cache: source === 'kroger' ? NO_STORE : OPEN_DATA_CACHE });
   } catch (err) {
     return failure('catalog', err, 'catalog_unavailable', 'The product catalog is unavailable right now.');
@@ -82,7 +88,6 @@ export async function stores(request: Request, env: Env): Promise<Response> {
 
 const MAX_PRICE_STORES = 12;
 const MAX_PRICE_UPCS = 100;
-const STORE_ID = /^kroger:\d{8}$/;
 
 /** GET /api/prices?stores=kroger:70500808,...&upcs=0001111042908,...: shelf prices in cents. */
 export async function prices(request: Request, env: Env): Promise<Response> {
@@ -118,6 +123,24 @@ export async function prices(request: Request, env: Env): Promise<Response> {
     return json({ prices: result, asOf: new Date().toISOString() }, { cache: NO_STORE });
   } catch (err) {
     return failure('prices', err, 'prices_unavailable', 'Prices are unavailable right now.');
+  }
+}
+
+/** GET /api/starter?store=kroger:70500808: a starter list of staples that store sells, with its prices. */
+export async function starter(request: Request, env: Env): Promise<Response> {
+  if (request.method !== 'GET') return error(405, 'method_not_allowed', 'Use GET.');
+  const storeId = new URL(request.url).searchParams.get('store') ?? '';
+  if (!STORE_ID.test(storeId)) return error(400, 'bad_store', 'Send a store id like kroger:70500808.');
+
+  const config = krogerConfig(env);
+  if (!config) return error(501, 'not_configured', 'Live store data is not set up on this server.');
+  if (!allow(`starter:${clientId(request)}`, 5)) return error(429, 'rate_limited', 'Too many requests. Try again in a minute.');
+
+  try {
+    const items = await krogerStarter(config, storeId, AbortSignal.timeout(12000));
+    return json({ items }, { cache: NO_STORE });
+  } catch (err) {
+    return failure('starter', err, 'starter_unavailable', 'Couldn’t build a starter list right now.');
   }
 }
 

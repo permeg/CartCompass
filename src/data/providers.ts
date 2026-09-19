@@ -34,7 +34,10 @@ export interface LocalCatalog {
 
 /** Product search over the network, through our own proxy. */
 export interface RemoteCatalog {
-  search(query: string, signal?: AbortSignal): Promise<Product[]>;
+  /** With a `storeId`, only products that store sells now, each with its shelf price in `referencePrice`. */
+  search(query: string, signal?: AbortSignal, storeId?: string): Promise<Product[]>;
+  /** A starter list built from what one store carries. */
+  starter?(storeId: string): Promise<CartLine[]>;
 }
 
 export interface StoreProvider {

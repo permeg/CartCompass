@@ -22,10 +22,11 @@ export async function searchCatalog(
   query: string,
   limit: number,
   signal?: AbortSignal,
+  storeId?: string,
 ): Promise<{ source: CatalogSource; products: Product[] }> {
   const source = pickCatalogSource(env);
   if (source === 'kroger') {
-    return { source, products: await searchKroger(krogerConfig(env)!, query, limit, signal) };
+    return { source, products: await searchKroger(krogerConfig(env)!, query, limit, signal, storeId) };
   }
   return { source, products: await searchOpenFoodFacts(query, limit, signal) };
 }

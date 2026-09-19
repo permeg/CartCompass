@@ -17,7 +17,7 @@ function lowestPrice(market: Market | null, productId: string): number | null {
 type RemoteState = { status: 'idle' | 'loading' | 'error'; products: Product[] };
 
 /** Wait for typing to settle, then ask the remote catalog. Stale requests are cancelled. */
-function useRemoteSearch(query: string, remote: RemoteCatalog | null): RemoteState {
+function useRemoteSearch(query: string, remote: RemoteCatalog | null, storeId: string | undefined): RemoteState {
   const [state, setState] = useState<RemoteState>({ status: 'idle', products: [] });
 
   useEffect(() => {
@@ -30,7 +30,7 @@ function useRemoteSearch(query: string, remote: RemoteCatalog | null): RemoteSta
     setState((s) => ({ status: 'loading', products: s.products }));
     const timer = setTimeout(async () => {
       try {
-        const products = await remote.search(q, controller.signal);
+        const products = await remote.search(q, controller.signal, storeId);
         if (!controller.signal.aborted) setState({ status: 'idle', products });
       } catch {
         if (!controller.signal.aborted) setState({ status: 'error', products: [] });
@@ -40,7 +40,7 @@ function useRemoteSearch(query: string, remote: RemoteCatalog | null): RemoteSta
       clearTimeout(timer);
       controller.abort();
     };
-  }, [query, remote]);
+  }, [query, remote, storeId]);
 
   return state;
 }
@@ -49,12 +49,15 @@ interface Props {
   cart: CartLine[];
   catalog: { local: LocalCatalog; remote: RemoteCatalog | null };
   sampleCart: CartLine[];
+  /** The nearest store, so live search only offers what that store sells. */
+  searchStoreId?: string;
   market: Market | null;
   unavailableIds: Set<string>;
   dispatch: (a: Action) => void;
 }
 
-export function CartPanel({ cart, catalog, sampleCart, market, unavailableIds, dispatch }: Props) {
+export function CartPanel({ cart, catalog, sampleCart, searchStoreId, market, unavailableIds, dispatch }: Props) {
+  const [loadingSample, setLoadingSample] = useState(false);
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -62,7 +65,25 @@ export function CartPanel({ cart, catalog, sampleCart, market, unavailableIds, d
   const listId = useId();
 
   const local = useMemo(() => searchCatalog(catalog.local.list(), query), [catalog, query]);
-  const remote = useRemoteSearch(query, catalog.remote);
+  const remote = useRemoteSearch(query, catalog.remote, searchStoreId);
+
+  /** A starter list from what the nearest store carries, or the built-in one if that isn't possible. */
+  const loadSample = async () => {
+    const build = catalog.remote?.starter;
+    if (!build || !searchStoreId) {
+      dispatch({ type: 'sample', cart: sampleCart });
+      return;
+    }
+    setLoadingSample(true);
+    try {
+      const items = await build.call(catalog.remote, searchStoreId);
+      dispatch({ type: 'sample', cart: items.length > 0 ? items : sampleCart });
+    } catch {
+      dispatch({ type: 'sample', cart: sampleCart });
+    } finally {
+      setLoadingSample(false);
+    }
+  };
   // Anything already shown from the demo list shouldn't be listed twice.
   const remoteOnly = remote.products.filter((p) => !local.some((l) => l.id === p.id));
   const results = [...local, ...remoteOnly];
@@ -100,7 +121,15 @@ export function CartPanel({ cart, catalog, sampleCart, market, unavailableIds, d
       <span className="result-name">
         {p.name} <span className="muted">{p.size}</span>
       </span>
-      <span className="muted small result-meta">{inCart.has(p.id) ? 'add another' : (p.brand ?? p.category)}</span>
+      <span className="muted small result-meta">
+        {inCart.has(p.id) ? (
+          'add another'
+        ) : p.source === 'kroger' && searchStoreId && p.referencePrice ? (
+          <span className="num">{money(p.referencePrice)}</span>
+        ) : (
+          (p.brand ?? p.category)
+        )}
+      </span>
     </li>
   );
 
@@ -187,8 +216,8 @@ export function CartPanel({ cart, catalog, sampleCart, market, unavailableIds, d
               </button>
             ))}
           </div>
-          <button className="link" onClick={() => dispatch({ type: 'sample', cart: sampleCart })}>
-            Or load a sample list
+          <button className="link" onClick={loadSample} disabled={loadingSample}>
+            {loadingSample ? 'Building a list for your area…' : 'Or load a sample list'}
           </button>
         </div>
       ) : (
@@ -239,6 +268,15 @@ export function CartPanel({ cart, catalog, sampleCart, market, unavailableIds, d
               </div>
             ))}
           </div>
+          {unavailableIds.size > 0 && catalog.remote?.starter && searchStoreId && (
+            <p className="notice notice--warn">
+              {unavailableIds.size === 1 ? '1 item isn’t' : `${unavailableIds.size} items aren’t`} sold at any store near
+              you.{' '}
+              <button className="link link--inline" onClick={loadSample} disabled={loadingSample}>
+                {loadingSample ? 'Building…' : 'Start over with a list for your area'}
+              </button>
+            </p>
+          )}
           <button className="link" onClick={() => dispatch({ type: 'clear' })}>
             Clear list
           </button>
