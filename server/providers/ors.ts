@@ -163,3 +163,35 @@ export async function orsRoute(config: OrsConfig, points: LatLon[], signal?: Abo
     minutes: (f?.properties?.summary?.duration ?? 0) / 60,
   };
 }
+
+/* ---------- which state is this point in? ---------- */
+
+const stateCache = new Map<string, string | null>();
+
+/**
+ * The two-letter US state code for a point, or null if it can't be told. Points are
+ * rounded to about seven miles before caching, which is plenty to know the state.
+ */
+export async function orsState(config: OrsConfig, point: LatLon, signal?: AbortSignal): Promise<string | null> {
+  const key = `${point.lat.toFixed(1)},${point.lon.toFixed(1)}`;
+  if (stateCache.has(key)) return stateCache.get(key) ?? null;
+
+  const params = new URLSearchParams({
+    'point.lat': String(point.lat),
+    'point.lon': String(point.lon),
+    'boundary.country': 'US',
+    size: '1',
+  });
+  const body = (await ors(config, `/geocode/reverse?${params}`, {}, signal)) as {
+    features?: { properties?: { region_a?: string } }[];
+  };
+  const code = body.features?.[0]?.properties?.region_a?.toUpperCase() ?? null;
+  const state = code && /^[A-Z]{2}$/.test(code) ? code : null;
+  if (stateCache.size > 500) stateCache.clear();
+  stateCache.set(key, state);
+  return state;
+}
+
+export function resetStateCache(): void {
+  stateCache.clear();
+}

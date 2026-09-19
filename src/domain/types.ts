@@ -81,6 +81,8 @@ export interface Market {
   prices: Record<string, Record<string, number>>;
   /** Cents per gallon. */
   gasPrice: number;
+  /** Where the gas price came from, when it is a real average. */
+  gasInfo?: { area: string; period: string };
   /** Driving miles, index 0 is the origin and 1..n follow `stores` order. */
   miles: number[][];
   /** Driving minutes, same indexing as `miles`. */

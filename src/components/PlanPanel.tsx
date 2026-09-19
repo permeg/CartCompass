@@ -99,18 +99,26 @@ function DataBadge({ sources }: { sources: DataSources | undefined }) {
   );
 }
 
+function gasSentence(market: Market, settings: Settings): string {
+  const price = `${money(settings.gasPriceOverride ?? market.gasPrice)}/gal`;
+  if (settings.gasPriceOverride !== null) return `Gas is ${price} (your price) at ${settings.mpg} mpg.`;
+  if (market.sources.gas === 'live' && market.gasInfo) {
+    const week = new Date(`${market.gasInfo.period}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return `Gas is ${price}, the U.S. Energy Information Administration’s weekly average for ${market.gasInfo.area} (week of ${week}), at ${settings.mpg} mpg.`;
+  }
+  return `Gas is ${price} (an estimate) at ${settings.mpg} mpg.`;
+}
+
 function Footnote({ market, settings }: { market: Market | null; settings: Settings }) {
   if (!market) return null;
   const { sources } = market;
   const asOf = market.pricesAsOf ? new Date(market.pricesAsOf) : null;
-  const gasEstimate = sources.gas === 'demo' && settings.gasPriceOverride === null;
   return (
     <p className="footnote">
       {sources.routing === 'live'
         ? 'Drive times and distances are from OpenRouteService, without live traffic.'
         : 'Distances are estimated road miles.'}{' '}
-      Gas is {money(settings.gasPriceOverride ?? market.gasPrice)}/gal{gasEstimate ? ' (an estimate)' : ''} at {settings.mpg}{' '}
-      mpg.
+      {gasSentence(market, settings)}
       {sources.prices === 'live' ? (
         <>
           {' '}

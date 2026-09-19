@@ -8,6 +8,7 @@
  */
 import { haversineMiles } from '../domain/geo';
 import type { CartLine, Category, DataSources, LatLon, Market, Product, RouteLine, Store } from '../domain/types';
+import { liveGas } from './gasClient';
 import { liveStores, livePrices } from './krogerClient';
 import { liveRouting } from './orsClient';
 import { LIVE_QUICK_ADDS, LIVE_SAMPLE_CART } from './liveSample';
@@ -51,9 +52,15 @@ export interface PriceProvider {
   ): Promise<{ prices: Record<string, Record<string, number>>; asOf: string | null }>;
 }
 
+export interface GasQuote {
+  /** Cents per gallon of regular near the point. */
+  cents: number;
+  /** Where the price applies and which week, for real averages. */
+  info?: { area: string; period: string };
+}
+
 export interface GasProvider {
-  /** Cents per gallon near this point. */
-  getGasPrice(origin: LatLon): Promise<number>;
+  getGasPrice(origin: LatLon): Promise<GasQuote>;
 }
 
 export interface RoutingProvider {
@@ -152,7 +159,7 @@ export const demoProviders: Providers = {
       return { prices, asOf: SEED_PRICES_AS_OF };
     },
   },
-  gas: { getGasPrice: async () => SEED_GAS_PRICE_CENTS },
+  gas: { getGasPrice: async () => ({ cents: SEED_GAS_PRICE_CENTS }) },
   routing: {
     async matrix(points) {
       const miles = points.map((a) => points.map((b) => haversineMiles(a, b) * ROAD_FACTOR));
@@ -164,14 +171,13 @@ export const demoProviders: Providers = {
 
 /**
  * Real Kroger-family stores (QFC, Fred Meyer) and real shelf prices, searched
- * through Kroger's product catalog. Drive times come from OpenRouteService when
- * the server has a key, and are estimates otherwise. Gas is still an estimate
- * until roadmap step 5.
+ * through Kroger's product catalog. Drive times come from OpenRouteService and gas
+ * prices from the EIA when the server has those keys, and are estimates otherwise.
  */
-function buildLive(routingLive: boolean): Providers {
+function buildLive(routingLive: boolean, gasLive: boolean): Providers {
   return {
     ...demoProviders,
-    sources: { stores: 'live', prices: 'live', routing: routingLive ? 'live' : 'demo', gas: 'demo' },
+    sources: { stores: 'live', prices: 'live', routing: routingLive ? 'live' : 'demo', gas: gasLive ? 'live' : 'demo' },
     catalog: {
       // Demo products have no barcode, so they can't be priced live.
       local: { list: () => [], find: () => undefined, quickAdds: () => LIVE_QUICK_ADDS },
@@ -181,6 +187,7 @@ function buildLive(routingLive: boolean): Providers {
     stores: liveStores,
     prices: livePrices,
     routing: routingLive ? liveRouting : demoProviders.routing,
+    gas: gasLive ? liveGas : demoProviders.gas,
   };
 }
 
@@ -191,6 +198,8 @@ export interface Capabilities {
   livePrices: boolean;
   /** The server can look up addresses, drive times and routes. */
   liveRouting: boolean;
+  /** The server can look up current gas prices. */
+  liveGas: boolean;
 }
 
 // Provider sets are cached so their identity is stable. The planner uses that to tell
@@ -202,12 +211,12 @@ const cache = new Map<string, Providers>();
  * gives the demo data a real catalog to search, for servers with no Kroger keys.
  */
 export function providersFor(mode: DataMode, caps: Capabilities): Providers {
-  const key = mode === 'live' ? `live:${caps.liveRouting}` : 'demo';
+  const key = mode === 'live' ? `live:${caps.liveRouting}:${caps.liveGas}` : 'demo';
   let providers = cache.get(key);
   if (!providers) {
     providers =
       mode === 'live'
-        ? buildLive(caps.liveRouting)
+        ? buildLive(caps.liveRouting, caps.liveGas)
         : import.meta.env.VITE_LIVE_CATALOG === 'true'
           ? { ...demoProviders, catalog: { local: demoCatalog, remote: remoteCatalog } }
           : demoProviders;
@@ -234,23 +243,32 @@ export async function loadMarket(
     routing = 'demo';
     return demoProviders.routing.matrix(points);
   });
-  const [{ prices, asOf }, gasPrice, { miles, minutes }] = await Promise.all([
+  // Same for gas: a failed lookup shouldn't cost the user their trip.
+  let gasSource = providers.sources.gas;
+  const gas = providers.gas.getGasPrice(origin).catch((err) => {
+    if (providers.sources.gas !== 'live') throw err;
+    console.warn('Gas price unavailable, using an estimate:', err);
+    gasSource = 'demo';
+    return demoProviders.gas.getGasPrice(origin);
+  });
+  const [{ prices, asOf }, gasQuote, { miles, minutes }] = await Promise.all([
     providers.prices.getPrices(
       stores.map((s) => s.id),
       products,
     ),
-    providers.gas.getGasPrice(origin),
+    gas,
     matrix,
   ]);
   return {
     origin,
     stores,
     prices,
-    gasPrice,
+    gasPrice: gasQuote.cents,
+    gasInfo: gasQuote.info,
     miles,
     minutes,
     requested: new Set(products.map((p) => p.id)),
-    sources: { ...providers.sources, routing },
+    sources: { ...providers.sources, routing, gas: gasSource },
     pricesAsOf: asOf,
   };
 }

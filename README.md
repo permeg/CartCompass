@@ -28,10 +28,11 @@ in demo mode only.
 - Add `ORS_API_KEY` (openrouteservice.org, free) for exact starting addresses, real drive times and the road
   route line. Without it the app uses preset Bellevue areas and estimated distances.
 - Keys stay on the server. The browser only talks to `/api/*`: `catalog/search`, `stores`, `prices`, `geocode`,
-  `matrix`, `route`, `health`.
+  `matrix`, `route`, `gas`, `health`.
 - Kroger's API sends no cache header, so anything from Kroger is served `no-store` and never cached.
 - The address you type is sent to OpenRouteService and saved only in your browser.
-- Gas prices are still an estimate (ROADMAP step 5).
+- Add `EIA_API_KEY` (eia.gov/opendata, free) for real gas prices: the U.S. Energy Information Administration's
+  weekly average for the nearest metro area, state or region. Without it, gas is an estimate.
 - With no Kroger keys, `npm run dev:live` gives demo mode a real product search from Open Food Facts.
 
 ## How it works
@@ -53,6 +54,6 @@ The layout is a three-column workspace on laptops (list, chart, trip) and a four
 ## Deploying (Cloudflare Pages)
 
 - Build command `npm run build`, output directory `dist`. Cloudflare picks up `functions/` automatically.
-- Set `KROGER_CLIENT_ID`, `KROGER_CLIENT_SECRET` and `ORS_API_KEY` as encrypted variables in the Pages project settings.
+- Set `KROGER_CLIENT_ID`, `KROGER_CLIENT_SECRET`, `ORS_API_KEY` and `EIA_API_KEY` as encrypted variables in the Pages project settings.
 - `npm run preview:cf` runs the built site and the functions locally under Cloudflare's runtime. Put local
   secrets in a `.dev.vars` file (git ignores it), in the same `KEY=value` format as `.env.example`.

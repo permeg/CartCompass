@@ -3,8 +3,9 @@ import { padUpc } from '../src/domain/upc';
 import { isRateLimited } from './errors';
 import { clientId, error, json, type Env } from './http';
 import { pickCatalogSource, searchCatalog } from './providers';
+import { eiaConfig, eiaRegularGas, gasAreaFor } from './providers/eia';
 import { krogerConfig, krogerPrices, krogerStoresNear } from './providers/kroger';
-import { orsConfig, orsGeocode, orsMatrix, orsRoute } from './providers/ors';
+import { orsConfig, orsGeocode, orsMatrix, orsRoute, orsState } from './providers/ors';
 import { allow } from './rateLimit';
 
 /**
@@ -206,6 +207,44 @@ export async function route(request: Request, env: Env): Promise<Response> {
   }
 }
 
+/* ---------- gas prices ---------- */
+
+/** GET /api/gas?lat=47.6&lon=-122.2: this week's average price of regular gas near a point (EIA). */
+export async function gas(request: Request, env: Env): Promise<Response> {
+  if (request.method !== 'GET') return error(405, 'method_not_allowed', 'Use GET.');
+  const params = new URL(request.url).searchParams;
+  const lat = num(params.get('lat'));
+  const lon = num(params.get('lon'));
+  if (lat === null || lon === null || !validPoint(lat, lon)) return error(400, 'bad_location', 'Send lat and lon as numbers.');
+
+  const eia = eiaConfig(env);
+  if (!eia) return error(501, 'not_configured', 'Gas prices are not set up on this server.');
+  if (!allow(`gas:${clientId(request)}`, 30)) return error(429, 'rate_limited', 'Too many requests. Try again in a minute.');
+
+  try {
+    // The state is only used to pick the right EIA series. If it can't be found, the
+    // nearest metro area or the national average still gives a sensible price.
+    let state: string | null = null;
+    const ors = orsConfig(env);
+    if (ors) {
+      try {
+        state = await orsState(ors, { lat, lon }, AbortSignal.timeout(5000));
+      } catch (err) {
+        console.error('[gas] state lookup failed:', err instanceof Error ? err.message : err);
+      }
+    }
+    const area = gasAreaFor({ lat, lon }, state);
+    const price = await eiaRegularGas(eia, area.id, AbortSignal.timeout(8000));
+    // EIA data is public, but the answer depends on where you are, so keep it to the browser.
+    return json(
+      { cents: price.cents, period: price.period, area: { id: area.id, name: area.name, kind: area.kind }, source: 'U.S. Energy Information Administration' },
+      { cache: 'private, max-age=3600' },
+    );
+  } catch (err) {
+    return failure('gas', err, 'gas_unavailable', 'Gas prices are unavailable right now.');
+  }
+}
+
 /* ---------- health ---------- */
 
 /** GET /api/health: lets the app see what this server can do. Never returns secrets. */
@@ -215,5 +254,6 @@ export async function health(_request: Request, env: Env): Promise<Response> {
     catalog: pickCatalogSource(env),
     livePrices: krogerConfig(env) !== null,
     liveRouting: orsConfig(env) !== null,
+    liveGas: eiaConfig(env) !== null,
   });
 }

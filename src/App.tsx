@@ -33,13 +33,17 @@ function useCapabilities(): Capabilities | null {
     let cancelled = false;
     fetch('/api/health', { signal: AbortSignal.timeout(3000) })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((body: { ok?: boolean; livePrices?: boolean; liveRouting?: boolean }) => {
+      .then((body: { ok?: boolean; livePrices?: boolean; liveRouting?: boolean; liveGas?: boolean }) => {
         if (cancelled) return;
         const ok = body.ok === true;
-        setCaps({ livePrices: ok && body.livePrices === true, liveRouting: ok && body.liveRouting === true });
+        setCaps({
+          livePrices: ok && body.livePrices === true,
+          liveRouting: ok && body.liveRouting === true,
+          liveGas: ok && body.liveGas === true,
+        });
       })
       .catch(() => {
-        if (!cancelled) setCaps({ livePrices: false, liveRouting: false });
+        if (!cancelled) setCaps({ livePrices: false, liveRouting: false, liveGas: false });
       });
     return () => {
       cancelled = true;
