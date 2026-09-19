@@ -1,5 +1,6 @@
 import { Minus, Plus, Search, X } from 'lucide-react';
-import { useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import type { LocalCatalog, RemoteCatalog } from '../data/providers';
 import { money } from '../domain/format';
 import { searchCatalog } from '../domain/search';
 import type { CartLine, Market, Product } from '../domain/types';
@@ -15,43 +16,94 @@ function lowestPrice(market: Market | null, productId: string): number | null {
   return all.length ? Math.min(...all) : null;
 }
 
+type RemoteState = { status: 'idle' | 'loading' | 'error'; products: Product[] };
+
+/** Wait for typing to settle, then ask the remote catalog. Stale requests are cancelled. */
+function useRemoteSearch(query: string, remote: RemoteCatalog | null): RemoteState {
+  const [state, setState] = useState<RemoteState>({ status: 'idle', products: [] });
+
+  useEffect(() => {
+    const q = query.trim();
+    if (!remote || q.length < 2) {
+      setState({ status: 'idle', products: [] });
+      return;
+    }
+    const controller = new AbortController();
+    setState((s) => ({ status: 'loading', products: s.products }));
+    const timer = setTimeout(async () => {
+      try {
+        const products = await remote.search(q, controller.signal);
+        if (!controller.signal.aborted) setState({ status: 'idle', products });
+      } catch {
+        if (!controller.signal.aborted) setState({ status: 'error', products: [] });
+      }
+    }, 300);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [query, remote]);
+
+  return state;
+}
+
 interface Props {
   cart: CartLine[];
-  catalog: Product[];
-  products: ReadonlyMap<string, Product>;
+  catalog: { local: LocalCatalog; remote: RemoteCatalog | null };
   market: Market | null;
   unavailableIds: Set<string>;
   dispatch: (a: Action) => void;
 }
 
-export function CartPanel({ cart, catalog, products, market, unavailableIds, dispatch }: Props) {
+export function CartPanel({ cart, catalog, market, unavailableIds, dispatch }: Props) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listId = useId();
 
-  const results = useMemo(() => searchCatalog(catalog, query), [catalog, query]);
+  const local = useMemo(() => searchCatalog(catalog.local.list(), query), [catalog, query]);
+  const remote = useRemoteSearch(query, catalog.remote);
+  // Anything already shown from the demo list shouldn't be listed twice.
+  const remoteOnly = remote.products.filter((p) => !local.some((l) => l.id === p.id));
+  const results = [...local, ...remoteOnly];
   const inCart = new Set(cart.map((l) => l.productId));
+  const searching = query.trim() !== '';
 
   const add = (p: Product) => {
-    dispatch({ type: 'add', productId: p.id });
+    dispatch({ type: 'add', product: p });
     setQuery('');
     setOpen(false);
     inputRef.current?.focus();
   };
 
   const grouped = useMemo(() => {
-    const byCat = new Map<string, { line: CartLine; product: Product }[]>();
-    for (const line of cart) {
-      const product = products.get(line.productId);
-      if (!product) continue;
-      byCat.set(product.category, [...(byCat.get(product.category) ?? []), { line, product }]);
-    }
+    const byCat = new Map<string, CartLine[]>();
+    for (const line of cart) byCat.set(line.product.category, [...(byCat.get(line.product.category) ?? []), line]);
     return [...byCat.entries()].sort(([a], [b]) => a.localeCompare(b));
-  }, [cart, products]);
+  }, [cart]);
 
   const count = cart.reduce((n, l) => n + l.qty, 0);
+
+  const option = (p: Product, i: number) => (
+    <li
+      key={p.id}
+      id={`${listId}-${i}`}
+      role="option"
+      aria-selected={i === active}
+      className={i === active ? 'is-active' : ''}
+      onMouseDown={(e) => {
+        e.preventDefault();
+        add(p);
+      }}
+      onMouseEnter={() => setActive(i)}
+    >
+      <span className="result-name">
+        {p.name} <span className="muted">{p.size}</span>
+      </span>
+      <span className="muted small result-meta">{inCart.has(p.id) ? 'add another' : (p.brand ?? p.category)}</span>
+    </li>
+  );
 
   return (
     <section className="panel-body" aria-labelledby="cart-heading">
@@ -95,30 +147,32 @@ export function CartPanel({ cart, catalog, products, market, unavailableIds, dis
             }
           }}
         />
-        {open && query.trim() !== '' && (
+        {open && searching && (
           <ul className="search-results" role="listbox" id={listId}>
-            {results.length === 0 && <li className="search-none">{market?.source === 'demo'
-                ? `Not in the demo catalog of ${catalog.length} items. Try a simpler word, like “milk”.`
-                : 'No match. Try a simpler word, like “milk”.'}</li>}
-            {results.map((p, i) => (
-              <li
-                key={p.id}
-                id={`${listId}-${i}`}
-                role="option"
-                aria-selected={i === active}
-                className={i === active ? 'is-active' : ''}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  add(p);
-                }}
-                onMouseEnter={() => setActive(i)}
-              >
-                <span>
-                  {p.name} <span className="muted">{p.size}</span>
-                </span>
-                <span className="muted small">{inCart.has(p.id) ? 'add another' : p.category}</span>
+            {local.map((p, i) => option(p, i))}
+
+            {catalog.remote && query.trim().length >= 2 && (
+              <>
+                <li role="presentation" className="search-divider">
+                  {remote.status === 'loading'
+                    ? 'Searching the product catalog…'
+                    : remote.status === 'error'
+                      ? 'Couldn’t reach the product catalog. Showing demo items only.'
+                      : remoteOnly.length > 0
+                        ? 'More from the product catalog'
+                        : local.length > 0
+                          ? 'Nothing more in the product catalog'
+                          : 'No match in the product catalog either. Try a simpler word.'}
+                </li>
+                {remoteOnly.map((p, i) => option(p, local.length + i))}
+              </>
+            )}
+
+            {!catalog.remote && local.length === 0 && (
+              <li className="search-none" role="presentation">
+                Not in the demo catalog of {catalog.local.list().length} items. Try a simpler word, like “milk”.
               </li>
-            ))}
+            )}
           </ul>
         )}
       </div>
@@ -129,9 +183,10 @@ export function CartPanel({ cart, catalog, products, market, unavailableIds, dis
           <p className="muted">Add what you need this week. We’ll work out which stores are worth the drive.</p>
           <div className="chips" aria-label="Quick add">
             {QUICK_ADDS.map((id) => {
-              const p = products.get(id)!;
+              const p = catalog.local.find(id);
+              if (!p) return null;
               return (
-                <button key={id} className="chip" onClick={() => dispatch({ type: 'add', productId: id })}>
+                <button key={id} className="chip" onClick={() => dispatch({ type: 'add', product: p })}>
                   <Plus size={13} aria-hidden="true" /> {p.name}
                 </button>
               );
@@ -144,11 +199,12 @@ export function CartPanel({ cart, catalog, products, market, unavailableIds, dis
       ) : (
         <>
           <div className="cart">
-            {grouped.map(([category, rows]) => (
+            {grouped.map(([category, lines]) => (
               <div key={category} className="cart-group">
                 <h3 className="eyebrow">{category}</h3>
                 <ul>
-                  {rows.map(({ line, product }) => {
+                  {lines.map((line) => {
+                    const { product } = line;
                     const low = lowestPrice(market, product.id);
                     const missing = unavailableIds.has(product.id);
                     return (
@@ -156,7 +212,7 @@ export function CartPanel({ cart, catalog, products, market, unavailableIds, dis
                         <div className="cart-name">
                           <span>{product.name}</span>
                           <span className="muted small">
-                            {product.size}
+                            {[product.brand, product.size].filter(Boolean).join(' · ')}
                             {missing ? (
                               <span className="warn"> · not sold at any nearby store</span>
                             ) : (

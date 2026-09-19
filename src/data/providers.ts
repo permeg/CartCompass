@@ -7,17 +7,27 @@
  * (see ROADMAP.md). Nothing else should need to change.
  */
 import { haversineMiles } from '../domain/geo';
-import type { LatLon, Market, Product, Store } from '../domain/types';
+import type { Category, LatLon, Market, Product, Store } from '../domain/types';
+import { remoteCatalog } from './remoteCatalog';
 import {
+  DEMO_CATALOG,
   SEED_GAS_PRICE_CENTS,
   SEED_PRICES_AS_OF,
   SEED_PRODUCTS,
   SEED_STORES,
+  findDemoProduct,
   type SeedStore,
 } from './seed';
 
-export interface CatalogProvider {
+/** Instant, in-memory products. The demo catalog is one of these. */
+export interface LocalCatalog {
   list(): Product[];
+  find(id: string): Product | undefined;
+}
+
+/** Product search over the network, through our own proxy. */
+export interface RemoteCatalog {
+  search(query: string, signal?: AbortSignal): Promise<Product[]>;
 }
 
 export interface StoreProvider {
@@ -25,10 +35,13 @@ export interface StoreProvider {
 }
 
 export interface PriceProvider {
-  /** storeId -> productId -> cents. Omit products a store doesn't carry. */
+  /**
+   * storeId -> productId -> cents. Omit products a store doesn't carry.
+   * Products are passed whole, since real providers look them up by barcode.
+   */
   getPrices(
     storeIds: string[],
-    productIds: string[],
+    products: Product[],
   ): Promise<{ prices: Record<string, Record<string, number>>; asOf: string | null }>;
 }
 
@@ -44,7 +57,7 @@ export interface RoutingProvider {
 
 export interface Providers {
   source: Market['source'];
-  catalog: CatalogProvider;
+  catalog: { local: LocalCatalog; remote: RemoteCatalog | null };
   stores: StoreProvider;
   prices: PriceProvider;
   gas: GasProvider;
@@ -66,10 +79,26 @@ function hash01(input: string): number {
   return (h >>> 0) / 4294967296;
 }
 
-function shelfPrice(store: SeedStore, product: (typeof SEED_PRODUCTS)[number]): number | undefined {
+const SEED_BASE_PRICE = new Map(SEED_PRODUCTS.map((p) => [p.id, p.basePrice]));
+
+/** Rough shelf prices for products the demo has never seen (from the live catalog). */
+const CATEGORY_DEFAULT_PRICE: Record<Category, number> = {
+  'Dairy & eggs': 449,
+  Produce: 299,
+  'Meat & seafood': 799,
+  Bakery: 399,
+  Pantry: 399,
+  Frozen: 549,
+  Beverages: 499,
+  Household: 799,
+};
+
+function shelfPrice(store: SeedStore, product: Product): number | undefined {
   if (hash01(`stock:${store.id}:${product.id}`) >= store.coverage) return undefined;
+  const base =
+    SEED_BASE_PRICE.get(product.id) ?? product.referencePrice ?? CATEGORY_DEFAULT_PRICE[product.category];
   const wobble = 1 + (hash01(`price:${store.id}:${product.id}`) - 0.5) * 0.14;
-  const raw = product.basePrice * store.factor * (store.bias[product.category] ?? 1) * wobble;
+  const raw = base * store.factor * (store.bias[product.category] ?? 1) * wobble;
   const cents = Math.round(raw);
   // Shelf prices end in 9 once they are over a dollar: 3.49, 4.39.
   return cents >= 100 ? Math.max(99, Math.round((cents + 1) / 10) * 10 - 1) : Math.max(29, cents);
@@ -79,9 +108,11 @@ function shelfPrice(store: SeedStore, product: (typeof SEED_PRODUCTS)[number]): 
 const ROAD_FACTOR = 1.3;
 const AVERAGE_MPH = 24;
 
+const demoCatalog: LocalCatalog = { list: () => DEMO_CATALOG, find: findDemoProduct };
+
 export const demoProviders: Providers = {
   source: 'demo',
-  catalog: { list: () => SEED_PRODUCTS },
+  catalog: { local: demoCatalog, remote: null },
   stores: {
     async storesNear(origin, radiusMiles) {
       return SEED_STORES.filter((s) => haversineMiles(origin, s) * ROAD_FACTOR <= radiusMiles).map(
@@ -91,11 +122,11 @@ export const demoProviders: Providers = {
     },
   },
   prices: {
-    async getPrices(storeIds, productIds) {
+    async getPrices(storeIds, products) {
       const prices: Record<string, Record<string, number>> = {};
       for (const store of SEED_STORES.filter((s) => storeIds.includes(s.id))) {
         prices[store.id] = {};
-        for (const product of SEED_PRODUCTS.filter((x) => productIds.includes(x.id))) {
+        for (const product of products) {
           const price = shelfPrice(store, product);
           if (price !== undefined) prices[store.id][product.id] = price;
         }
@@ -113,12 +144,24 @@ export const demoProviders: Providers = {
   },
 };
 
-export const activeProviders: Providers = demoProviders;
+/**
+ * Prices, stores, gas and routing are still demo data. With `npm run dev:live`
+ * the product search also queries the real catalog through `/api/catalog/search`,
+ * and any product found that way gets an invented price until step 3 of the
+ * roadmap replaces the price provider.
+ */
+export const activeProviders: Providers = {
+  ...demoProviders,
+  catalog: {
+    local: demoCatalog,
+    remote: import.meta.env.VITE_LIVE_CATALOG === 'true' ? remoteCatalog : null,
+  },
+};
 
 /** Gather everything the optimizer needs for this origin and set of products. */
 export async function loadMarket(
   origin: LatLon,
-  productIds: string[],
+  products: Product[],
   radiusMiles: number,
   providers: Providers = activeProviders,
 ): Promise<Market> {
@@ -127,7 +170,7 @@ export async function loadMarket(
   const [{ prices, asOf }, gasPrice, { miles, minutes }] = await Promise.all([
     providers.prices.getPrices(
       stores.map((s) => s.id),
-      productIds,
+      products,
     ),
     providers.gas.getGasPrice(origin),
     providers.routing.matrix([origin, ...stores]),
@@ -139,7 +182,7 @@ export async function loadMarket(
     gasPrice,
     miles,
     minutes,
-    requested: new Set(productIds),
+    requested: new Set(products.map((p) => p.id)),
     source: providers.source,
     pricesAsOf: asOf,
   };

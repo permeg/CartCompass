@@ -1,15 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { activeProviders, loadMarket } from '../data/providers';
+import { loadMarket } from '../data/providers';
 import { NEIGHBORHOODS } from '../data/seed';
 import { limitDriveTime, maxUsefulFlex, planTrips, recommend } from '../domain/optimizer';
 import type { Market, Neighborhood, Plan, PlanSet, Product } from '../domain/types';
 import type { AppState } from './appState';
 
-const CATALOG: Product[] = activeProviders.catalog.list();
-const PRODUCTS = new Map(CATALOG.map((p) => [p.id, p]));
-
 export interface Planner {
-  catalog: Product[];
   products: ReadonlyMap<string, Product>;
   home: Neighborhood;
   market: Market | null;
@@ -33,6 +29,7 @@ export function usePlanner(state: AppState): Planner {
     .map((l) => l.productId)
     .sort()
     .join(',');
+  const products = useMemo(() => new Map(cart.map((l) => [l.productId, l.product])), [cart]);
 
   const [market, setMarket] = useState<Market | null>(null);
   const [loading, setLoading] = useState(true);
@@ -41,7 +38,11 @@ export function usePlanner(state: AppState): Planner {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    loadMarket(home, productKey ? productKey.split(',') : [], settings.radiusMiles)
+    loadMarket(
+      home,
+      cart.map((l) => l.product),
+      settings.radiusMiles,
+    )
       .then((m) => {
         if (cancelled) return;
         setMarket(m);
@@ -67,7 +68,7 @@ export function usePlanner(state: AppState): Planner {
 
   const computed = useMemo(() => {
     if (!market || !fresh) return null;
-    const planSet = planTrips(cart, PRODUCTS, market, {
+    const planSet = planTrips(cart, products, market, {
       maxStops: settings.maxStops,
       radiusMiles: settings.radiusMiles,
       mpg: settings.mpg,
@@ -75,7 +76,7 @@ export function usePlanner(state: AppState): Planner {
       includeMembership: settings.includeMembership,
     });
     return { market, planSet };
-  }, [market, fresh, cart, settings.maxStops, settings.radiusMiles, settings.mpg, settings.gasPriceOverride, settings.includeMembership]);
+  }, [market, fresh, cart, products, settings.maxStops, settings.radiusMiles, settings.mpg, settings.gasPriceOverride, settings.includeMembership]);
 
   // Keep showing the last good result while new prices load.
   const lastGood = useRef(computed);
@@ -92,8 +93,7 @@ export function usePlanner(state: AppState): Planner {
   const recommended = planSet ? recommend(planSet, settings.mode, flex) : null;
 
   return {
-    catalog: CATALOG,
-    products: PRODUCTS,
+    products,
     home,
     market: shown?.market ?? market,
     planSet,

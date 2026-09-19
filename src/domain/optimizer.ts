@@ -41,7 +41,7 @@ function subsets(indexes: number[], maxSize: number): number[][] {
  * otherwise it is just a longer version of a smaller group.
  */
 export function planTrips(
-  cart: CartLine[],
+  cart: Pick<CartLine, 'productId' | 'qty'>[],
   products: ReadonlyMap<string, Product>,
   market: Market,
   options: PlanOptions,

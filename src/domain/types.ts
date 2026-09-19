@@ -22,6 +22,14 @@ export interface Product {
   category: Category;
   /** Extra search terms, e.g. "12 eggs" for a dozen eggs. */
   aliases?: string[];
+  brand?: string;
+  imageUrl?: string;
+  /** Barcode, when the catalog knows it. Real price providers look products up by this. */
+  upc?: string;
+  /** A typical shelf price in cents, when the catalog knows one. */
+  referencePrice?: number;
+  /** Where this product came from. Missing means the built-in demo catalog. */
+  source?: 'demo' | 'kroger' | 'openfoodfacts';
 }
 
 export interface Store extends LatLon {
@@ -35,6 +43,8 @@ export interface Store extends LatLon {
 export interface CartLine {
   productId: string;
   qty: number;
+  /** A snapshot of the product as it was added, so the list survives without the catalog. */
+  product: Product;
 }
 
 export interface Neighborhood extends LatLon {

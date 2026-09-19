@@ -1,6 +1,6 @@
 import { useEffect, useReducer } from 'react';
-import { SAMPLE_CART, DEFAULT_NEIGHBORHOOD } from '../data/seed';
-import type { CartLine, Mode } from '../domain/types';
+import { DEFAULT_NEIGHBORHOOD, SAMPLE_CART, findDemoProduct } from '../data/seed';
+import type { CartLine, Mode, Product } from '../domain/types';
 
 export interface Settings {
   homeId: string;
@@ -25,7 +25,7 @@ export interface AppState {
 }
 
 export type Action =
-  | { type: 'add'; productId: string }
+  | { type: 'add'; product: Product }
   | { type: 'setQty'; productId: string; qty: number }
   | { type: 'remove'; productId: string }
   | { type: 'clear' }
@@ -48,6 +48,18 @@ export const DEFAULT_SETTINGS: Settings = {
 
 const STORAGE_KEY = 'cart-compass:v1';
 
+/**
+ * Lists saved before cart lines carried their own product only have an id. Look
+ * those up in the demo catalog, and drop any that can't be found.
+ */
+function migrateCart(lines: Partial<CartLine>[]): CartLine[] {
+  return lines.flatMap((l) => {
+    const product = l.product ?? (l.productId ? findDemoProduct(l.productId) : undefined);
+    if (!product || typeof l.qty !== 'number') return [];
+    return [{ productId: product.id, qty: l.qty, product }];
+  });
+}
+
 function initialState(): AppState {
   const fresh: AppState = { cart: SAMPLE_CART, settings: DEFAULT_SETTINGS, checked: [] };
   try {
@@ -55,7 +67,7 @@ function initialState(): AppState {
     if (!raw) return fresh;
     const saved = JSON.parse(raw) as Partial<AppState>;
     return {
-      cart: Array.isArray(saved.cart) ? saved.cart : fresh.cart,
+      cart: Array.isArray(saved.cart) ? migrateCart(saved.cart) : fresh.cart,
       settings: { ...DEFAULT_SETTINGS, ...saved.settings },
       checked: Array.isArray(saved.checked) ? saved.checked : [],
     };
@@ -67,10 +79,10 @@ function initialState(): AppState {
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
     case 'add': {
-      const existing = state.cart.find((l) => l.productId === action.productId);
+      const existing = state.cart.find((l) => l.productId === action.product.id);
       const cart = existing
         ? state.cart.map((l) => (l === existing ? { ...l, qty: Math.min(l.qty + 1, 99) } : l))
-        : [...state.cart, { productId: action.productId, qty: 1 }];
+        : [...state.cart, { productId: action.product.id, qty: 1, product: action.product }];
       return { ...state, cart };
     }
     case 'setQty':

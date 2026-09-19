@@ -5,29 +5,32 @@
 - **Baseline for "you save":** the nearest single store that stocks the whole cart.
 - **Max stops per plan:** 3.
 - **Net savings:** shown as items + gas = true cost, compared against the baseline's true cost.
-- **Modes:** Cheapest, and Balanced (fastest plan whose cost <= cheapest + $X).
-- **Layout:** phone (bottom nav) and laptop (three-column workspace: cart / map / plan). Laptop is designed first, since it is the portfolio view.
-- **Phase 1 scope:** cart -> results -> mode toggle -> map -> shopping list.
-- **Phase 2:** Profile (accent picker, home store, alerts, distance unit) and Smart Swap.
+- **Modes:** "Lowest price", and "Save time" (fastest plan whose cost is at most the cheapest plus $X, and whose driving fits a max drive time).
+- **Layout:** phone (bottom nav) and laptop (three-column workspace: list / chart / trip). Laptop is designed first, since it is the portfolio view.
 
-## TODO after the initial implementation: replace seeded data with real providers
+## Phase 1: done
 
-Phase 1 ships with **seeded, hardcoded Bellevue demo data** (about 6-8 stores, about 60 products, gas price, drive distances). This is a stopgap. Once the initial implementation is done:
+List, trip plan, mode toggle with extra-cost limit and drive-time limit, chart map, in-store checklist. Runs on **seeded, invented Bellevue demo data** (7 stores, 251 products, gas price, drive distances), all behind provider interfaces in `src/data/providers.ts`.
 
-- [ ] **Do not leave prices hardcoded.** Move all price, store, gas and routing access behind the data-provider interfaces so the seeded dataset is just one implementation.
-- [ ] Grocery prices: integrate the Kroger public API (QFC/Fred Meyer cover Bellevue). Use Open Food Facts for product metadata. Other chains have no public API, so decide how to handle them (hide, mark "estimated", or exclude).
-- [ ] Store locations, distance and drive time: OpenStreetMap (Overpass + OSRM), or Google Places/Routes if paid is acceptable.
-- [ ] Gas price: EIA regional average, with a user override.
-- [ ] API keys must not ship in the client. Add a small serverless proxy.
-- [ ] UI: keep a visible "demo data" label until real providers are wired, and show "updated X ago" once prices are live.
-- [ ] Handle the failure modes real data introduces: missing items, stale prices, rate limits, chains with no data.
-- [ ] Map: the chart is schematic (simplified coastlines, curved lines between stops). With live routing, draw the real route geometry.
-- [ ] Location: the demo offers six Bellevue neighborhoods. Add address and ZIP lookup (geocoding) and browser geolocation.
-- [ ] Store names are fictional. Real chains will need brand names, hours, and logos or plain-text names.
-- [ ] **Product catalog:** the demo has 251 hand-written products (`src/data/seed.ts`, `src/data/catalog.ts`), so anything outside that list can't be added. Replace it with live product search (Kroger product API and/or Open Food Facts). That means `CatalogProvider` becomes async (`search(query)`), and cart lines need to store the product details they were added with, since there is no longer a fixed list to look them up in. The stemming and typo-tolerant matching in `src/domain/search.ts` is only for the demo catalog.
+## Phase 2: real data (the API integration)
 
-## Phase 2 (not started)
+Goal: replace the seeded data with real providers, one piece at a time. The demo data stays as a fallback and as the portfolio mode, and the "Demo data" tag stays until every piece below is live.
+
+1. [x] **Serverless proxy.** API keys can't live in the browser. Handlers in `server/`, served by Vite in dev and as Vercel functions in `api/`.
+2. [x] **Live catalog search.** Product search from a real catalog (Kroger when keys are set, otherwise Open Food Facts). `CatalogProvider` is async, and cart lines store the product details they were added with. Opt in with `npm run dev:live`.
+3. [ ] **Real prices.** Kroger product pricing by store location (QFC and Fred Meyer cover Bellevue). Chains with no public API need a decision: hide them, or label them "estimated".
+4. [ ] **Real stores and drive distances.** OpenStreetMap (Overpass + OSRM) or Google Places/Routes. Address and ZIP lookup, browser geolocation, and drawing the real route on the chart instead of curved lines.
+5. [ ] **Real gas prices.** EIA regional average, with the user's override kept.
+
+Cross-cutting, do alongside the steps above:
+
+- [ ] Show "updated X ago" on prices once they are live, and keep the "Demo data" tag until step 5 is done.
+- [ ] Failure modes real data introduces: missing items, stale prices, rate limits, chains with no data.
+- [ ] Store names in the demo are fictional. Real chains need real names, hours, and logos or plain text.
+- [ ] Until step 3 lands, products from the live catalog have **invented** prices (from a reference price or a category default). This is why the tag stays.
+
+## Phase 3: features (not started)
 
 - Profile: accent color picker, home store, price-drop alerts, distance unit (see the handoff doc).
-- Smart Swap: suggest a cheaper equivalent brand at a stop.
+- Smart Swap: suggest a cheaper equivalent brand at a stop. Needs real product data from Phase 2.
 - Saved lists and sharing.

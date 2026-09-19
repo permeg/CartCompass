@@ -14,7 +14,19 @@ npm install
 npm run dev
 ```
 
-Other scripts: `npm test` (optimizer tests), `npm run typecheck`, `npm run build`.
+Other scripts: `npm test`, `npm run typecheck`, `npm run build`.
+
+### Live product search
+
+`npm run dev:live` also searches a real product catalog when you type in the list. It goes through
+a small proxy in `server/` (served by Vite in dev, and as Vercel functions from `api/` in production),
+so API keys never reach the browser.
+
+- With no keys it uses [Open Food Facts](https://world.openfoodfacts.org), limited to US products.
+- To use Kroger's catalog instead, copy `.env.example` to `.env.local` and add your Kroger developer
+  keys. The Kroger adapter is written from their docs and hasn't been run against the live API yet.
+- Products found this way still get **invented prices** until real pricing lands (ROADMAP, step 3).
+- Plain `npm run dev` and any static deploy stay demo-only and make no network calls.
 
 ## How it works
 
@@ -24,6 +36,8 @@ Other scripts: `npm test` (optimizer tests), `npm run typecheck`, `npm run build
   and the set of plans in between.
 - `src/data/providers.ts` is the seam to the outside world. The app only ever sees a `Market`
   (stores, prices, gas, drive distances). The demo providers read `src/data/seed.ts`.
+- `server/` holds the proxy handlers (`server/handlers.ts`), which are plain `Request` to `Response`
+  functions. `api/` has the thin Vercel wrappers, and `vite.config.ts` mounts the same handlers in dev.
 - `src/components/ChartMap.tsx` draws a schematic chart of the route. Coastlines are simplified and
   roads aren't drawn.
 

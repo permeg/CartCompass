@@ -49,7 +49,7 @@ const opts: PlanOptions = {
   includeMembership: false,
 };
 
-const cart: CartLine[] = [
+const cart: Pick<CartLine, 'productId' | 'qty'>[] = [
   { productId: 'eggs', qty: 1 },
   { productId: 'milk', qty: 1 },
   { productId: 'oats', qty: 1 },
@@ -256,8 +256,11 @@ describe('limitDriveTime', () => {
 describe('demo data', () => {
   it('produces a multi-store win for the sample cart', async () => {
     const home = NEIGHBORHOODS[0];
-    const ids = SAMPLE_CART.map((l) => l.productId);
-    const market = await loadMarket(home, ids, 12);
+    const market = await loadMarket(
+      home,
+      SAMPLE_CART.map((l) => l.product),
+      12,
+    );
     const catalog = new Map(SEED_PRODUCTS.map((p) => [p.id, p as Product]));
     const set = planTrips(SAMPLE_CART, catalog, market, {
       ...opts,

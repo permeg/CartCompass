@@ -7,6 +7,7 @@ import { planOptions, savingsVsBaseline } from './components/planOptions';
 import { ShoppingList } from './components/ShoppingList';
 import { TripSettings } from './components/TripSettings';
 import { miles, money } from './domain/format';
+import { activeProviders } from './data/providers';
 import { NEIGHBORHOODS } from './data/seed';
 import { useAppState } from './state/appState';
 import { usePlanner } from './state/usePlanner';
@@ -53,8 +54,7 @@ export default function App() {
   const cartPanel = (
     <CartPanel
       cart={cart}
-      catalog={planner.catalog}
-      products={planner.products}
+      catalog={activeProviders.catalog}
       market={planner.market}
       unavailableIds={unavailableIds}
       dispatch={dispatch}

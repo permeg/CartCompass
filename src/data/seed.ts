@@ -3,7 +3,7 @@
  * It exists so the app works with no API keys. See ROADMAP.md for the plan to
  * replace it with real providers.
  */
-import type { Category, Neighborhood, Product, Store } from '../domain/types';
+import type { CartLine, Category, Neighborhood, Product, Store } from '../domain/types';
 import { EXTRA_PRODUCTS } from './catalog';
 
 export const NEIGHBORHOODS: Neighborhood[] = [
@@ -180,23 +180,38 @@ const CORE_PRODUCTS: SeedProduct[] = [
 
 export const SEED_PRODUCTS: SeedProduct[] = [...CORE_PRODUCTS, ...EXTRA_PRODUCTS];
 
+/** The demo catalog as plain products, without the invented base prices. */
+export const DEMO_CATALOG: Product[] = SEED_PRODUCTS.map(({ basePrice: _basePrice, ...product }) => product);
+
+const DEMO_BY_ID = new Map(DEMO_CATALOG.map((p) => [p.id, p]));
+
+export function findDemoProduct(id: string): Product | undefined {
+  return DEMO_BY_ID.get(id);
+}
+
 /** What a fresh visitor sees: a cart that produces an interesting trade-off. */
-export const SAMPLE_CART: { productId: string; qty: number }[] = [
-  { productId: 'eggs-12', qty: 1 },
-  { productId: 'milk-whole', qty: 1 },
-  { productId: 'oats', qty: 1 },
-  { productId: 'bananas', qty: 3 },
-  { productId: 'chicken-thigh', qty: 3 },
-  { productId: 'pasta', qty: 2 },
-  { productId: 'marinara', qty: 2 },
-  { productId: 'cheddar', qty: 1 },
-  { productId: 'bread', qty: 1 },
-  { productId: 'coffee', qty: 1 },
-  { productId: 'olive-oil', qty: 1 },
-  { productId: 'rice', qty: 1 },
-  { productId: 'onions', qty: 1 },
-  { productId: 'butter', qty: 1 },
+const SAMPLE_ITEMS: [string, number][] = [
+  ['eggs-12', 1],
+  ['milk-whole', 1],
+  ['oats', 1],
+  ['bananas', 3],
+  ['chicken-thigh', 3],
+  ['pasta', 2],
+  ['marinara', 2],
+  ['cheddar', 1],
+  ['bread', 1],
+  ['coffee', 1],
+  ['olive-oil', 1],
+  ['rice', 1],
+  ['onions', 1],
+  ['butter', 1],
 ];
+
+export const SAMPLE_CART: CartLine[] = SAMPLE_ITEMS.map(([productId, qty]) => ({
+  productId,
+  qty,
+  product: DEMO_BY_ID.get(productId)!,
+}));
 
 export const SEED_GAS_PRICE_CENTS = 489;
 export const SEED_PRICES_AS_OF = '2026-09-17T18:00:00Z';

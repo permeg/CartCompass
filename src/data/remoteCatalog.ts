@@ -1,0 +1,50 @@
+import type { Category, Product } from '../domain/types';
+import type { RemoteCatalog } from './providers';
+
+const CATEGORIES: Category[] = [
+  'Dairy & eggs',
+  'Produce',
+  'Meat & seafood',
+  'Bakery',
+  'Pantry',
+  'Frozen',
+  'Beverages',
+  'Household',
+];
+
+/** The proxy is ours, but its output still becomes cart data, so check its shape. */
+function toProduct(value: unknown): Product | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const v = value as Record<string, unknown>;
+  if (typeof v.id !== 'string' || typeof v.name !== 'string' || v.name.trim() === '') return null;
+  const str = (x: unknown) => (typeof x === 'string' && x.trim() !== '' ? x : undefined);
+  return {
+    id: v.id,
+    name: v.name,
+    size: typeof v.size === 'string' ? v.size : '',
+    category: CATEGORIES.includes(v.category as Category) ? (v.category as Category) : 'Pantry',
+    brand: str(v.brand),
+    imageUrl: str(v.imageUrl),
+    upc: str(v.upc),
+    referencePrice: typeof v.referencePrice === 'number' && v.referencePrice > 0 ? v.referencePrice : undefined,
+    source: v.source === 'kroger' || v.source === 'openfoodfacts' ? v.source : undefined,
+  };
+}
+
+const cache = new Map<string, Product[]>();
+
+/** Product search through our own `/api/catalog/search` proxy. Results are cached for the session. */
+export const remoteCatalog: RemoteCatalog = {
+  async search(query, signal) {
+    const key = query.trim().toLowerCase();
+    const hit = cache.get(key);
+    if (hit) return hit;
+
+    const res = await fetch(`/api/catalog/search?q=${encodeURIComponent(query.trim())}`, { signal });
+    if (!res.ok) throw new Error(`Catalog search failed (${res.status})`);
+    const body = (await res.json()) as { products?: unknown[] };
+    const products = (body.products ?? []).map(toProduct).filter((p): p is Product => p !== null);
+    cache.set(key, products);
+    return products;
+  },
+};
