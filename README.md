@@ -19,7 +19,7 @@ Other scripts: `npm test`, `npm run typecheck`, `npm run build`.
 ### Live product search
 
 `npm run dev:live` also searches a real product catalog when you type in the list. It goes through
-a small proxy in `server/` (served by Vite in dev, and as Vercel functions from `api/` in production),
+a small proxy in `server/` (served by Vite in dev, and as Cloudflare Pages Functions from `functions/` in production),
 so API keys never reach the browser.
 
 - With no keys it uses [Open Food Facts](https://world.openfoodfacts.org), limited to US products.
@@ -36,9 +36,17 @@ so API keys never reach the browser.
   and the set of plans in between.
 - `src/data/providers.ts` is the seam to the outside world. The app only ever sees a `Market`
   (stores, prices, gas, drive distances). The demo providers read `src/data/seed.ts`.
-- `server/` holds the proxy handlers (`server/handlers.ts`), which are plain `Request` to `Response`
-  functions. `api/` has the thin Vercel wrappers, and `vite.config.ts` mounts the same handlers in dev.
+- `server/` holds the proxy handlers (`server/handlers.ts`), which are plain `(Request, env)` to `Response`
+  functions. `functions/` has the thin Cloudflare Pages wrappers, and `vite.config.ts` mounts the same
+  handlers in dev.
 - `src/components/ChartMap.tsx` draws a schematic chart of the route. Coastlines are simplified and
   roads aren't drawn.
 
 The layout is a three-column workspace on laptops (list, chart, trip) and a four-tab app on phones.
+
+## Deploying (Cloudflare Pages)
+
+- Build command `npm run build`, output directory `dist`. Cloudflare picks up `functions/` automatically.
+- Set `KROGER_CLIENT_ID` and `KROGER_CLIENT_SECRET` as encrypted variables in the Pages project settings.
+- `npm run preview:cf` runs the built site and the functions locally under Cloudflare's runtime. Put local
+  secrets in a `.dev.vars` file (git ignores it), in the same `KEY=value` format as `.env.example`.

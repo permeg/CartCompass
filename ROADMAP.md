@@ -16,10 +16,10 @@ List, trip plan, mode toggle with extra-cost limit and drive-time limit, chart m
 
 Goal: replace the seeded data with real providers, one piece at a time. The demo data stays as a fallback and as the portfolio mode, and the "Demo data" tag stays until every piece below is live.
 
-1. [x] **Serverless proxy.** API keys can't live in the browser. Handlers in `server/`, served by Vite in dev and as Vercel functions in `api/`.
+1. [x] **Serverless proxy.** API keys can't live in the browser. Handlers in `server/`, served by Vite in dev and as Cloudflare Pages Functions in `functions/`.
 2. [x] **Live catalog search.** Product search from a real catalog (Kroger when keys are set, otherwise Open Food Facts). `CatalogProvider` is async, and cart lines store the product details they were added with. Opt in with `npm run dev:live`.
 3. [ ] **Real prices.** Kroger product pricing by store location (QFC and Fred Meyer cover Bellevue). Chains with no public API need a decision: hide them, or label them "estimated".
-4. [ ] **Real stores and drive distances.** OpenStreetMap (Overpass + OSRM) or Google Places/Routes. Address and ZIP lookup, browser geolocation, and drawing the real route on the chart instead of curved lines.
+4. [ ] **Real stores and drive distances.** OpenRouteService (free key): geocoding for address and ZIP lookup, and a distance matrix and directions for drive times and the route line. Needs an attribution line. Also browser geolocation drawing the real route on the chart instead of curved lines.
 5. [ ] **Real gas prices.** EIA regional average, with the user's override kept.
 
 Cross-cutting, do alongside the steps above:
@@ -28,6 +28,10 @@ Cross-cutting, do alongside the steps above:
 - [ ] Failure modes real data introduces: missing items, stale prices, rate limits, chains with no data.
 - [ ] Store names in the demo are fictional. Real chains need real names, hours, and logos or plain text.
 - [ ] Until step 3 lands, products from the live catalog have **invented** prices (from a reference price or a category default). This is why the tag stays.
+
+## Deployment target
+
+Cloudflare Pages at `cartcompass.permeg.com` (the portfolio's domain is already on Cloudflare). The static site and the functions ship together from the GitHub repo. Live data is the default when server keys are configured, with the demo data available from a switch in the app.
 
 ## Phase 3: features (not started)
 

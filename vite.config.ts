@@ -5,7 +5,7 @@ import { defineConfig } from 'vitest/config';
 
 /**
  * Serves the handlers in `server/` at `/api/*` during `npm run dev`, so the app
- * talks to the same code that runs as Vercel functions in production. Edits to
+ * talks to the same code that runs as Cloudflare Pages Functions in production. Edits to
  * `server/` reload without restarting.
  */
 function apiPlugin(): Plugin {
@@ -28,7 +28,7 @@ function apiPlugin(): Plugin {
           for (const [key, value] of Object.entries(req.headers)) {
             if (typeof value === 'string') headers.set(key, value);
           }
-          const response = await handler(new Request(url, { method: req.method, headers }));
+          const response = await handler(new Request(url, { method: req.method, headers }), process.env);
           res.statusCode = response.status;
           response.headers.forEach((value, key) => res.setHeader(key, value));
           if (response.body) Readable.fromWeb(response.body as never).pipe(res);

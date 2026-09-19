@@ -1,4 +1,4 @@
-import { clientId, error, json } from './http';
+import { clientId, error, json, type Env } from './http';
 import { pickCatalogSource, searchCatalog } from './providers';
 import { allow } from './rateLimit';
 
@@ -6,7 +6,7 @@ const MAX_QUERY = 60;
 const RESULT_LIMIT = 10;
 
 /** GET /api/catalog/search?q=milk */
-export async function catalogSearch(request: Request): Promise<Response> {
+export async function catalogSearch(request: Request, env: Env): Promise<Response> {
   if (request.method !== 'GET') return error(405, 'method_not_allowed', 'Use GET.');
 
   const raw = new URL(request.url).searchParams.get('q') ?? '';
@@ -18,7 +18,7 @@ export async function catalogSearch(request: Request): Promise<Response> {
   if (!allow(clientId(request))) return error(429, 'rate_limited', 'Too many searches. Try again in a minute.');
 
   try {
-    const { source, products } = await searchCatalog(process.env, q, RESULT_LIMIT, AbortSignal.timeout(8000));
+    const { source, products } = await searchCatalog(env, q, RESULT_LIMIT, AbortSignal.timeout(8000));
     // Popular searches repeat a lot, so let the CDN hold on to them.
     return json({ source, products }, { cache: 'public, max-age=300, s-maxage=3600, stale-while-revalidate=86400' });
   } catch (err) {
@@ -29,6 +29,6 @@ export async function catalogSearch(request: Request): Promise<Response> {
 }
 
 /** GET /api/health: lets the app check the proxy is there. Never returns secrets. */
-export async function health(): Promise<Response> {
-  return json({ ok: true, catalog: pickCatalogSource(process.env) });
+export async function health(_request: Request, env: Env): Promise<Response> {
+  return json({ ok: true, catalog: pickCatalogSource(env) });
 }

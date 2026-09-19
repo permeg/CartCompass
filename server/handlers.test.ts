@@ -11,6 +11,7 @@ const search = (q: string, init?: RequestInit, headers: Record<string, string> =
       ...init,
       headers: { 'x-forwarded-for': '203.0.113.7', ...headers },
     }),
+    process.env,
   );
 
 const jsonResponse = (body: unknown, status = 200) =>
@@ -42,7 +43,7 @@ describe('catalogSearch validation', () => {
     expect((await search('a')).status).toBe(400);
     expect((await search('   ')).status).toBe(400);
     expect((await search('x'.repeat(61))).status).toBe(400);
-    expect((await catalogSearch(new Request('http://localhost/api/catalog/search'))).status).toBe(400);
+    expect((await catalogSearch(new Request('http://localhost/api/catalog/search'), process.env)).status).toBe(400);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -228,7 +229,7 @@ describe('provider selection and health', () => {
   it('health reports the provider and nothing secret', async () => {
     process.env.KROGER_CLIENT_ID = 'test-id';
     process.env.KROGER_CLIENT_SECRET = 'test-secret';
-    const text = await (await health()).text();
+    const text = await (await health(new Request('http://localhost/api/health'), process.env)).text();
     expect(JSON.parse(text)).toEqual({ ok: true, catalog: 'kroger' });
     expect(text).not.toContain('test-');
   });

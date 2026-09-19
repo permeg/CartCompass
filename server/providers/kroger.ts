@@ -34,7 +34,7 @@ let cached: { token: string; expiresAt: number; key: string } | null = null;
 async function accessToken(config: KrogerConfig, signal?: AbortSignal): Promise<string> {
   const key = config.clientId;
   if (cached && cached.key === key && cached.expiresAt > Date.now() + 30_000) return cached.token;
-  const basic = Buffer.from(`${config.clientId}:${config.clientSecret}`).toString('base64');
+  const basic = btoa(`${config.clientId}:${config.clientSecret}`);
   const res = await fetch(`${API}/connect/oauth2/token`, {
     method: 'POST',
     headers: { authorization: `Basic ${basic}`, 'content-type': 'application/x-www-form-urlencoded' },
