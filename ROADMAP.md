@@ -19,7 +19,7 @@ Goal: replace the seeded data with real providers, one piece at a time. The demo
 1. [x] **Serverless proxy.** API keys can't live in the browser. Handlers in `server/`, served by Vite in dev and as Cloudflare Pages Functions in `functions/`.
 2. [x] **Live catalog search.** Product search from a real catalog (Kroger when keys are set, otherwise Open Food Facts). `CatalogProvider` is async, and cart lines store the product details they were added with. Opt in with `npm run dev:live`.
 3. [ ] **Real prices.** Kroger product pricing by store location (QFC and Fred Meyer cover Bellevue). Chains with no public API need a decision: hide them, or label them "estimated".
-4. [ ] **Real stores and drive distances.** OpenRouteService (free key): geocoding for address and ZIP lookup, and a distance matrix and directions for drive times and the route line. Needs an attribution line. Also browser geolocation drawing the real route on the chart instead of curved lines.
+4. [ ] **Real stores and drive distances.** OpenRouteService (free key): geocoding for address and ZIP lookup, and a distance matrix and directions for drive times and the route line. Needs an attribution line. Also browser geolocation, and drawing the real route on the chart instead of curved lines.
 5. [ ] **Real gas prices.** EIA regional average, with the user's override kept.
 
 Cross-cutting, do alongside the steps above:
