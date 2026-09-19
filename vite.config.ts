@@ -28,7 +28,13 @@ function apiPlugin(): Plugin {
           for (const [key, value] of Object.entries(req.headers)) {
             if (typeof value === 'string') headers.set(key, value);
           }
-          const response = await handler(new Request(url, { method: req.method, headers }), process.env);
+          let body: Uint8Array | undefined;
+          if (req.method && !['GET', 'HEAD'].includes(req.method)) {
+            const chunks: Buffer[] = [];
+            for await (const chunk of req) chunks.push(chunk as Buffer);
+            body = new Uint8Array(Buffer.concat(chunks));
+          }
+          const response = await handler(new Request(url, { method: req.method, headers, body: body as BodyInit | undefined }), process.env);
           res.statusCode = response.status;
           response.headers.forEach((value, key) => res.setHeader(key, value));
           if (response.body) Readable.fromWeb(response.body as never).pipe(res);
@@ -46,9 +52,12 @@ function apiPlugin(): Plugin {
 export default defineConfig(({ mode }) => {
   // Server-side keys (KROGER_*) live in .env.local and never reach the browser,
   // because only VITE_-prefixed variables are exposed to client code.
-  const env = loadEnv(mode, process.cwd(), '');
-  for (const [key, value] of Object.entries(env)) {
-    if (process.env[key] === undefined) process.env[key] = value;
+  // Tests never load real keys: they stub every network call.
+  if (!process.env.VITEST) {
+    const env = loadEnv(mode, process.cwd(), '');
+    for (const [key, value] of Object.entries(env)) {
+      if (process.env[key] === undefined) process.env[key] = value;
+    }
   }
 
   return {

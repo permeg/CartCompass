@@ -7,8 +7,9 @@
  * (see ROADMAP.md) replaces one demo provider inside `liveProviders`.
  */
 import { haversineMiles } from '../domain/geo';
-import type { CartLine, Category, DataSources, LatLon, Market, Product, Store } from '../domain/types';
+import type { CartLine, Category, DataSources, LatLon, Market, Product, RouteLine, Store } from '../domain/types';
 import { liveStores, livePrices } from './krogerClient';
+import { liveRouting } from './orsClient';
 import { LIVE_QUICK_ADDS, LIVE_SAMPLE_CART } from './liveSample';
 import { remoteCatalog } from './remoteCatalog';
 import {
@@ -58,6 +59,8 @@ export interface GasProvider {
 export interface RoutingProvider {
   /** Driving miles and minutes between every pair of points. */
   matrix(points: LatLon[]): Promise<{ miles: number[][]; minutes: number[][] }>;
+  /** The road line through the points, when the provider can draw one. */
+  routeLine?(points: LatLon[], signal?: AbortSignal): Promise<RouteLine | null>;
 }
 
 export interface Providers {
@@ -161,34 +164,56 @@ export const demoProviders: Providers = {
 
 /**
  * Real Kroger-family stores (QFC, Fred Meyer) and real shelf prices, searched
- * through Kroger's product catalog. Drive times and gas are still estimates
- * until roadmap steps 4 and 5.
+ * through Kroger's product catalog. Drive times come from OpenRouteService when
+ * the server has a key, and are estimates otherwise. Gas is still an estimate
+ * until roadmap step 5.
  */
-export const liveProviders: Providers = {
-  ...demoProviders,
-  sources: { stores: 'live', prices: 'live', routing: 'demo', gas: 'demo' },
-  catalog: {
-    // Demo products have no barcode, so they can't be priced live.
-    local: { list: () => [], find: () => undefined, quickAdds: () => LIVE_QUICK_ADDS },
-    remote: remoteCatalog,
-  },
-  sampleCart: () => LIVE_SAMPLE_CART,
-  stores: liveStores,
-  prices: livePrices,
-};
+function buildLive(routingLive: boolean): Providers {
+  return {
+    ...demoProviders,
+    sources: { stores: 'live', prices: 'live', routing: routingLive ? 'live' : 'demo', gas: 'demo' },
+    catalog: {
+      // Demo products have no barcode, so they can't be priced live.
+      local: { list: () => [], find: () => undefined, quickAdds: () => LIVE_QUICK_ADDS },
+      remote: remoteCatalog,
+    },
+    sampleCart: () => LIVE_SAMPLE_CART,
+    stores: liveStores,
+    prices: livePrices,
+    routing: routingLive ? liveRouting : demoProviders.routing,
+  };
+}
 
 export type DataMode = 'live' | 'demo';
+
+export interface Capabilities {
+  /** The server can look up real Kroger stores and prices. */
+  livePrices: boolean;
+  /** The server can look up addresses, drive times and routes. */
+  liveRouting: boolean;
+}
+
+// Provider sets are cached so their identity is stable. The planner uses that to tell
+// whether a market was loaded with the providers it is being shown for.
+const cache = new Map<string, Providers>();
 
 /**
  * Pick the providers for a mode. The older `dev:live` switch (VITE_LIVE_CATALOG) still
  * gives the demo data a real catalog to search, for servers with no Kroger keys.
  */
-export function providersFor(mode: DataMode): Providers {
-  if (mode === 'live') return liveProviders;
-  if (import.meta.env.VITE_LIVE_CATALOG === 'true') {
-    return { ...demoProviders, catalog: { local: demoCatalog, remote: remoteCatalog } };
+export function providersFor(mode: DataMode, caps: Capabilities): Providers {
+  const key = mode === 'live' ? `live:${caps.liveRouting}` : 'demo';
+  let providers = cache.get(key);
+  if (!providers) {
+    providers =
+      mode === 'live'
+        ? buildLive(caps.liveRouting)
+        : import.meta.env.VITE_LIVE_CATALOG === 'true'
+          ? { ...demoProviders, catalog: { local: demoCatalog, remote: remoteCatalog } }
+          : demoProviders;
+    cache.set(key, providers);
   }
-  return demoProviders;
+  return providers;
 }
 
 /** Gather everything the optimizer needs for this origin and set of products. */
@@ -200,13 +225,22 @@ export async function loadMarket(
 ): Promise<Market> {
   // Ask for a wider ring than the user's radius so a bigger radius doesn't need a refetch.
   const stores = await providers.stores.storesNear(origin, Math.max(radiusMiles, 15));
+  const points = [origin, ...stores];
+  // If real drive times fail, fall back to estimates rather than losing the whole trip.
+  let routing = providers.sources.routing;
+  const matrix = providers.routing.matrix(points).catch((err) => {
+    if (providers.sources.routing !== 'live') throw err;
+    console.warn('Drive times unavailable, using estimates:', err);
+    routing = 'demo';
+    return demoProviders.routing.matrix(points);
+  });
   const [{ prices, asOf }, gasPrice, { miles, minutes }] = await Promise.all([
     providers.prices.getPrices(
       stores.map((s) => s.id),
       products,
     ),
     providers.gas.getGasPrice(origin),
-    providers.routing.matrix([origin, ...stores]),
+    matrix,
   ]);
   return {
     origin,
@@ -216,7 +250,7 @@ export async function loadMarket(
     miles,
     minutes,
     requested: new Set(products.map((p) => p.id)),
-    sources: providers.sources,
+    sources: { ...providers.sources, routing },
     pricesAsOf: asOf,
   };
 }

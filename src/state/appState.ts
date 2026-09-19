@@ -1,11 +1,14 @@
 import { useEffect, useReducer } from 'react';
 import { LIVE_SAMPLE_CART } from '../data/liveSample';
 import type { DataMode } from '../data/providers';
-import { DEFAULT_NEIGHBORHOOD, SAMPLE_CART, findDemoProduct } from '../data/seed';
-import type { CartLine, Mode, Product } from '../domain/types';
+import { DEFAULT_NEIGHBORHOOD, NEIGHBORHOODS, SAMPLE_CART, findDemoProduct } from '../data/seed';
+import type { CartLine, Mode, Place, Product } from '../domain/types';
 
 export interface Settings {
-  homeId: string;
+  /** Where live trips start: any address, or a preset area. */
+  home: Place;
+  /** The Bellevue area demo trips start from (the demo's stores are all around Bellevue). */
+  demoHomeId: string;
   mode: Mode;
   /** Extra cents the user will pay to save time (only used in "time" mode). */
   flex: number;
@@ -48,8 +51,12 @@ export type Action =
   | { type: 'toggleChecked'; key: string }
   | { type: 'clearChecked' };
 
+const DEFAULT_PLACE: Place =
+  NEIGHBORHOODS.find((n) => n.id === DEFAULT_NEIGHBORHOOD) ?? NEIGHBORHOODS[0];
+
 export const DEFAULT_SETTINGS: Settings = {
-  homeId: DEFAULT_NEIGHBORHOOD,
+  home: DEFAULT_PLACE,
+  demoHomeId: DEFAULT_NEIGHBORHOOD,
   mode: 'cheapest',
   flex: 300,
   maxDriveMinutes: 30,
@@ -59,6 +66,21 @@ export const DEFAULT_SETTINGS: Settings = {
   gasPriceOverride: null,
   includeMembership: false,
 };
+
+/** Settings saved before addresses existed only had a `homeId`. */
+function mergeSettings(saved: (Partial<Settings> & { homeId?: string }) | undefined): Settings {
+  const { homeId, ...rest } = saved ?? {};
+  const legacy = homeId ? NEIGHBORHOODS.find((n) => n.id === homeId) : undefined;
+  const merged: Settings = { ...DEFAULT_SETTINGS, ...rest };
+  if (legacy && !saved?.home) {
+    merged.home = legacy;
+    merged.demoHomeId = legacy.id;
+  }
+  const h = merged.home;
+  if (!h || !Number.isFinite(h.lat) || !Number.isFinite(h.lon) || typeof h.label !== 'string') merged.home = DEFAULT_PLACE;
+  if (!NEIGHBORHOODS.some((n) => n.id === merged.demoHomeId)) merged.demoHomeId = DEFAULT_NEIGHBORHOOD;
+  return merged;
+}
 
 const STORAGE_KEY = 'cart-compass:v2';
 const LEGACY_KEY = 'cart-compass:v1';
@@ -97,7 +119,7 @@ function initialState(): AppState {
         carts: { live: pick('live'), demo: pick('demo') },
         mode: preferred,
         preferred,
-        settings: { ...DEFAULT_SETTINGS, ...saved.settings },
+        settings: mergeSettings(saved.settings),
         checked: Array.isArray(saved.checked) ? saved.checked : [],
       };
     }
@@ -108,7 +130,7 @@ function initialState(): AppState {
       return {
         ...base,
         carts: { live: base.carts.live, demo: Array.isArray(old.cart) ? migrateCart(old.cart) : base.carts.demo },
-        settings: { ...DEFAULT_SETTINGS, ...old.settings },
+        settings: mergeSettings(old.settings),
         checked: Array.isArray(old.checked) ? old.checked : [],
       };
     }

@@ -19,7 +19,7 @@ Goal: replace the seeded data with real providers, one piece at a time. The demo
 1. [x] **Serverless proxy.** API keys can't live in the browser. Handlers in `server/`, served by Vite in dev and as Cloudflare Pages Functions in `functions/`.
 2. [x] **Live catalog search.** Product search from a real catalog (Kroger when keys are set, otherwise Open Food Facts). `CatalogProvider` is async, and cart lines store the product details they were added with. Live search is on whenever live mode is on.
 3. [x] **Real prices and real stores.** Kroger's Locations and Products APIs through the proxy (`/api/stores`, `/api/prices`). Live mode is the default whenever the server has Kroger keys, with a Live/Demo switch in the header. Each mode keeps its own list. Only Kroger-family stores (QFC, Fred Meyer) have public prices, so other chains aren't included.
-4. [ ] **Drive distances and addresses.** OpenRouteService (free key): geocoding for address and ZIP lookup, and a distance matrix and directions for drive times and the route line. Needs an attribution line. Also browser geolocation, and drawing the real route on the chart instead of curved lines.
+4. [x] **Drive distances, addresses and route line.** OpenRouteService through the proxy: `/api/geocode` (any US address or ZIP, plus browser location), `/api/matrix` (real driving distances and times, no live traffic), `/api/route` (the road line drawn on the chart). If drive times fail, the app falls back to estimates and the badge says so. The required OpenRouteService and OpenStreetMap credit is shown on the chart.
 5. [ ] **Real gas prices.** EIA regional average, with the user's override kept.
 
 Cross-cutting, do alongside the steps above:
@@ -27,9 +27,10 @@ Cross-cutting, do alongside the steps above:
 - [ ] Show "updated X ago" on prices once they are live, and keep the "Demo data" tag until step 5 is done.
 - [ ] Failure modes real data introduces: missing items, stale prices, rate limits, chains with no data.
 - [ ] Store names in the demo are fictional. Real chains need real names, hours, and logos or plain text.
-- [x] Live-mode prices are real. Demo mode still uses invented prices, and the badge says which one you're looking at ("Live prices" now; "Live data" once steps 4 and 5 land).
+- [x] Live-mode prices are real. Demo mode still uses invented prices, and the badge says which one you're looking at ("Live prices" now; "Live data" once step 5 lands).
 - [ ] Real prices only exist for Kroger-family stores, and every QFC shares one price list, so live trips are mostly "QFC or Fred Meyer". A second price source would make multi-store trips more interesting. No legitimate public API exists for the other big chains.
-- [ ] Kroger's terms: confirm what they allow for caching prices and showing them on a public site.
+- [ ] **Kroger terms (checked Sept 2026, not legal advice).** What's clear: Kroger content may not be scraped, put in databases or kept as permanent copies, and may only be cached as long as the API's cache header allows. Kroger's API sends *no* cache header, so everything Kroger-derived is served `no-store` (CDN, browser and the in-page search cache). Required: display any attribution the API docs ask for, don't misrepresent the source, and don't imply Kroger endorses the app (the footnote says it isn't affiliated). What's unclear: the terms also bar "publicly displaying" API content to third parties "unless expressly permitted", and the API Acceptable Use and Branding Guidelines pages (which may grant that permission and set attribution rules) couldn't be read automatically. **Owner to read both pages, and ask Kroger developer support for written confirmation before promoting the site.** Also review: saved lists keep product names locally in the browser, and the live starter list in `src/data/liveSample.ts` is a snapshot of product names and barcodes (no prices).
+- [ ] Kroger's public rate limits: Products 10,000 calls a day, Locations 1,600 a day. With no caching, heavy traffic will hit these. The app shows a "busy" message and Demo mode still works.
 
 ## Deployment target
 

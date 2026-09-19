@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { loadMarket, type Providers } from '../data/providers';
+import { loadMarket, type DataMode, type Providers } from '../data/providers';
 import { NEIGHBORHOODS } from '../data/seed';
 import { limitDriveTime, maxUsefulFlex, planTrips, recommend } from '../domain/optimizer';
-import type { CartLine, Market, Neighborhood, Plan, PlanSet, Product } from '../domain/types';
+import type { CartLine, Market, Place, Plan, PlanSet, Product } from '../domain/types';
 import type { Settings } from './appState';
 
 export interface Planner {
   products: ReadonlyMap<string, Product>;
-  home: Neighborhood;
+  /** Where the trip starts. */
+  home: Place;
   market: Market | null;
   planSet: PlanSet | null;
   recommended: Plan | null;
@@ -19,21 +20,31 @@ export interface Planner {
   retry: () => void;
 }
 
+/** The starting point for this data mode. Demo stores are all around Bellevue, so demo uses preset areas. */
+export function startingPlace(mode: DataMode, settings: Settings): Place {
+  return mode === 'live' ? settings.home : (NEIGHBORHOODS.find((n) => n.id === settings.demoHomeId) ?? NEIGHBORHOODS[0]);
+}
+
+interface Loaded {
+  market: Market;
+  providers: Providers;
+}
+
 /**
  * Fetches market data whenever the origin, the set of products or the data
  * providers change, and turns it into plans. Quantity and settings changes only
  * re-plan, they never refetch. While a refetch is in flight the previous plan
- * stays on screen (unless it came from a different set of providers).
+ * stays on screen (unless it came from different providers).
  */
-export function usePlanner(cart: CartLine[], settings: Settings, providers: Providers): Planner {
-  const home = NEIGHBORHOODS.find((n) => n.id === settings.homeId) ?? NEIGHBORHOODS[0];
+export function usePlanner(cart: CartLine[], settings: Settings, providers: Providers, mode: DataMode): Planner {
+  const home = startingPlace(mode, settings);
   const productKey = cart
     .map((l) => l.productId)
     .sort()
     .join(',');
   const products = useMemo(() => new Map(cart.map((l) => [l.productId, l.product])), [cart]);
 
-  const [market, setMarket] = useState<Market | null>(null);
+  const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -48,8 +59,8 @@ export function usePlanner(cart: CartLine[], settings: Settings, providers: Prov
       settings.radiusMiles,
       providers,
     )
-      .then((m) => {
-        if (!cancelled) setMarket(m);
+      .then((market) => {
+        if (!cancelled) setLoaded({ market, providers });
       })
       .catch((err) => {
         console.error(err);
@@ -67,18 +78,22 @@ export function usePlanner(cart: CartLine[], settings: Settings, providers: Prov
     return () => {
       cancelled = true;
     };
-  }, [home, productKey, settings.radiusMiles, providers, attempt]);
+    // `home` is compared by value: a new object with the same coordinates isn't a new trip.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [home.lat, home.lon, productKey, settings.radiusMiles, providers, attempt]);
 
-  // A market only describes the products, origin and data source it was fetched for.
-  const fresh =
-    market !== null &&
-    market.sources === providers.sources &&
-    market.origin.lat === home.lat &&
-    market.origin.lon === home.lon &&
-    cart.every((l) => market.requested.has(l.productId));
+  // A market only describes the products, origin and providers it was fetched for.
+  const market =
+    loaded &&
+    loaded.providers === providers &&
+    loaded.market.origin.lat === home.lat &&
+    loaded.market.origin.lon === home.lon &&
+    cart.every((l) => loaded.market.requested.has(l.productId))
+      ? loaded.market
+      : null;
 
   const computed = useMemo(() => {
-    if (!market || !fresh) return null;
+    if (!market) return null;
     const planSet = planTrips(cart, products, market, {
       maxStops: settings.maxStops,
       radiusMiles: settings.radiusMiles,
@@ -86,13 +101,13 @@ export function usePlanner(cart: CartLine[], settings: Settings, providers: Prov
       gasPriceOverride: settings.gasPriceOverride,
       includeMembership: settings.includeMembership,
     });
-    return { market, planSet, sources: providers.sources };
-  }, [market, fresh, cart, products, providers.sources, settings.maxStops, settings.radiusMiles, settings.mpg, settings.gasPriceOverride, settings.includeMembership]);
+    return { market, planSet, providers };
+  }, [market, cart, products, providers, settings.maxStops, settings.radiusMiles, settings.mpg, settings.gasPriceOverride, settings.includeMembership]);
 
-  // Keep showing the last good result while new prices load, but never one from other data.
+  // Keep showing the last good result while new prices load, but never one from other providers.
   const lastGood = useRef(computed);
   if (computed) lastGood.current = computed;
-  const shown = computed ?? (lastGood.current?.sources === providers.sources ? lastGood.current : null);
+  const shown = computed ?? (lastGood.current?.providers === providers ? lastGood.current : null);
 
   // The drive-time limit only applies when the user is trading money for time.
   const basePlanSet = shown?.planSet ?? null;
@@ -106,7 +121,7 @@ export function usePlanner(cart: CartLine[], settings: Settings, providers: Prov
   return {
     products,
     home,
-    market: shown?.market ?? (market?.sources === providers.sources ? market : null),
+    market: shown?.market ?? (loaded?.providers === providers ? loaded.market : null),
     planSet,
     recommended,
     maxFlex: planSet ? maxUsefulFlex(planSet) : 0,

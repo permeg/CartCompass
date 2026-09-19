@@ -1,6 +1,7 @@
 import { haversineMiles } from '../../src/domain/geo';
 import type { Product, Store } from '../../src/domain/types';
 import { padUpc } from '../../src/domain/upc';
+import { UpstreamError } from '../errors';
 import { dedupe, inferCategory, tidyName } from '../normalize';
 
 const API = 'https://api.kroger.com/v1';
@@ -43,7 +44,7 @@ async function accessToken(config: KrogerConfig, signal?: AbortSignal): Promise<
     signal,
   });
   // Deliberately not including the response body in the error: it can echo credentials back.
-  if (!res.ok) throw new Error(`Kroger token request failed with ${res.status}`);
+  if (!res.ok) throw new UpstreamError('Kroger', res.status);
   const body = (await res.json()) as { access_token?: string; expires_in?: number };
   if (!body.access_token) throw new Error('Kroger token response had no access_token');
   cached = { token: body.access_token, expiresAt: Date.now() + (body.expires_in ?? 1500) * 1000, key };
@@ -91,7 +92,7 @@ export async function searchKroger(
 
   const res = await fetch(url, { headers: { authorization: `Bearer ${token}`, accept: 'application/json' }, signal });
   if (res.status === 401) cached = null;
-  if (!res.ok) throw new Error(`Kroger product search failed with ${res.status}`);
+  if (!res.ok) throw new UpstreamError('Kroger', res.status);
   const body = (await res.json()) as { data?: KrogerProduct[] };
   const products = (body.data ?? []).map(normalizeProduct).filter((p): p is Product => p !== null);
   return dedupe(products).slice(0, limit);
@@ -170,7 +171,7 @@ export async function krogerStoresNear(
   url.searchParams.set('filter.limit', '50');
   const res = await fetch(url, { headers: { authorization: `Bearer ${token}`, accept: 'application/json' }, signal });
   if (res.status === 401) cached = null;
-  if (!res.ok) throw new Error(`Kroger locations failed with ${res.status}`);
+  if (!res.ok) throw new UpstreamError('Kroger', res.status);
   const body = (await res.json()) as { data?: KrogerLocation[] };
 
   const found = (body.data ?? [])
@@ -244,7 +245,7 @@ export async function krogerPrices(
             signal,
           });
           if (res.status === 401) cached = null;
-          if (!res.ok) throw new Error(`Kroger prices failed with ${res.status}`);
+          if (!res.ok) throw new UpstreamError('Kroger', res.status);
           const body = (await res.json()) as { data?: PricedProduct[] };
           for (const p of body.data ?? []) {
             const code = padUpc(p.productId ?? p.upc);

@@ -1124,7 +1124,7 @@ input[type='range']::-moz-range-thumb {
     padding: 0 16px;
   }
   .brand span {
-    font-size: 14px;
+    display: none;
   }
   .place select {
     max-width: 156px;
@@ -1172,4 +1172,109 @@ input[type='range']::-moz-range-thumb {
 .link--inline {
   display: inline;
   margin: 0 0 0 4px;
+}
+
+/* ---------- address picker ---------- */
+.place-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0 12px;
+  min-height: 36px;
+  max-width: 240px;
+  font-size: 13px;
+  color: var(--text);
+}
+.place-btn:hover {
+  background: var(--bg-hover);
+}
+.place-btn svg {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+.place-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.address-results {
+  margin-top: 6px;
+}
+.address-results li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 8px;
+  min-height: 44px;
+  border-radius: 4px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--line-soft);
+}
+.address-results li.is-active {
+  background: var(--bg-hover);
+}
+.address-results svg {
+  flex-shrink: 0;
+  color: var(--text-3);
+}
+.address-status {
+  min-height: 20px;
+  margin: 8px 2px 12px;
+}
+.btn-block {
+  width: 100%;
+  justify-content: center;
+  min-height: 44px;
+}
+.area-heading {
+  margin: 22px 0 6px;
+}
+.area-list button {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  padding: 11px 8px;
+  min-height: 44px;
+  border-bottom: 1px solid var(--line-soft);
+  align-items: center;
+}
+.area-list button:hover {
+  background: var(--bg-hover);
+}
+.area-list button.is-on {
+  color: var(--accent);
+}
+.chart-credit {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  max-width: calc(100% - 130px);
+  text-align: right;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-3);
+  background: color-mix(in srgb, var(--bg-map) 82%, transparent);
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+.chart-credit a {
+  color: var(--text-2);
+}
+@media (max-width: 560px) {
+  .place-btn {
+    max-width: 170px;
+    padding: 0 10px;
+    min-height: 44px;
+  }
+  .topbar-actions {
+    flex: 1;
+    justify-content: flex-end;
+  }
+}
+@media (max-width: 1023px) {
+  .place-btn {
+    min-height: 44px;
+  }
 }

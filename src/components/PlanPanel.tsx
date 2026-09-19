@@ -65,9 +65,20 @@ export function PlanPanel(props: Props) {
   );
 }
 
+const SOURCE_LABELS: Record<keyof DataSources, string> = {
+  stores: 'stores',
+  prices: 'prices',
+  routing: 'drive times',
+  gas: 'gas price',
+};
+
 function DataBadge({ sources }: { sources: DataSources | undefined }) {
   if (!sources) return null;
-  if (Object.values(sources).every((s) => s === 'live')) {
+  const entries = Object.entries(sources) as [keyof DataSources, DataSources[keyof DataSources]][];
+  const real = entries.filter(([, v]) => v === 'live').map(([k]) => SOURCE_LABELS[k]);
+  const estimated = entries.filter(([, v]) => v === 'demo').map(([k]) => SOURCE_LABELS[k]);
+
+  if (estimated.length === 0) {
     return (
       <span className="tag tag--live" title="Stores, prices, drive times and gas are all real.">
         Live data
@@ -76,10 +87,7 @@ function DataBadge({ sources }: { sources: DataSources | undefined }) {
   }
   if (sources.prices === 'live') {
     return (
-      <span
-        className="tag tag--live"
-        title="Stores and prices are real (QFC and Fred Meyer). Drive times and gas prices are estimates."
-      >
+      <span className="tag tag--live" title={`Real: ${real.join(', ')}. Estimated: ${estimated.join(', ')}.`}>
         Live prices
       </span>
     );
@@ -93,18 +101,23 @@ function DataBadge({ sources }: { sources: DataSources | undefined }) {
 
 function Footnote({ market, settings }: { market: Market | null; settings: Settings }) {
   if (!market) return null;
-  const live = market.sources.prices === 'live';
+  const { sources } = market;
   const asOf = market.pricesAsOf ? new Date(market.pricesAsOf) : null;
+  const gasEstimate = sources.gas === 'demo' && settings.gasPriceOverride === null;
   return (
     <p className="footnote">
-      Distances are estimated road miles. Gas is {money(settings.gasPriceOverride ?? market.gasPrice)}/gal
-      {market.sources.gas === 'demo' && settings.gasPriceOverride === null ? ' (an estimate)' : ''} at {settings.mpg} mpg.
-      {live ? (
+      {sources.routing === 'live'
+        ? 'Drive times and distances are from OpenRouteService, without live traffic.'
+        : 'Distances are estimated road miles.'}{' '}
+      Gas is {money(settings.gasPriceOverride ?? market.gasPrice)}/gal{gasEstimate ? ' (an estimate)' : ''} at {settings.mpg}{' '}
+      mpg.
+      {sources.prices === 'live' ? (
         <>
           {' '}
-          Prices come from Kroger’s API for QFC and Fred Meyer
+          Store and price data come from Kroger’s public API
           {asOf ? `, as of ${asOf.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : ''}. Sale prices may
-          need the store’s loyalty card. Other chains don’t publish prices, so they aren’t included.
+          need the store’s loyalty card. Only Kroger-family stores (QFC, Fred Meyer) publish prices, so other chains aren’t
+          included. This app isn’t affiliated with or endorsed by Kroger.
         </>
       ) : (
         asOf && (
@@ -120,7 +133,8 @@ function PlanEmpty({ planSet, loading, settings }: { planSet: PlanSet | null; lo
   if (planSet && planSet.storesConsidered === 0) {
     return (
       <p className="notice notice--warn">
-        No stores within {settings.radiusMiles} miles. Raise the distance in Trip settings.
+        {settings.radiusMiles <= 10 ? `No stores within ${settings.radiusMiles} miles of here. ` : 'No stores found near here. '}
+        {settings.radiusMiles < 15 ? 'Try a larger distance in Trip settings, or a different starting point.' : 'Try a different starting point.'}
       </p>
     );
   }

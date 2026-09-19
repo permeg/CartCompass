@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { miles as fmtMiles } from '../domain/format';
 import { placeCentered, placeLabel, type Placed, type Rect } from './labels';
-import type { LatLon, Market, Plan } from '../domain/types';
+import type { LatLon, Market, Plan, RouteLine } from '../domain/types';
 
 /**
  * A schematic chart of the trip: contour rings, the two lakes, edge ticks and a
@@ -53,6 +53,10 @@ interface Props {
   activeStoreId: string | null;
   onActiveStore: (id: string | null) => void;
   homeLabel: string;
+  /** Road geometry for the plan. When missing, simple curves are drawn instead. */
+  routeLine?: RouteLine | null;
+  /** Show the routing data credit (required by OpenRouteService and OpenStreetMap). */
+  credit?: boolean;
 }
 
 export function ChartMap({
@@ -64,6 +68,8 @@ export function ChartMap({
   activeStoreId,
   onActiveStore,
   homeLabel,
+  routeLine = null,
+  credit = false,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 640, h: 520 });
@@ -144,17 +150,34 @@ export function ChartMap({
     others.map((s) => [s.id, placeLabel(project(s), s.name, 12, 10, ['right', 'left', 'top', 'bottom'], taken, frame)]),
   );
 
+  // With real road geometry the legs follow the streets. Otherwise they are simple curves.
+  const useRoads = !!plan && !!routeLine && routeLine.wayPoints.length === routeNodes.length;
+
   const legs = plan
     ? routeNodes.slice(0, -1).map((from, i) => {
+        const isReturn = i === routeNodes.length - 2;
+        const miles = isReturn ? plan.returnMiles : plan.stops[i].legMiles;
+        const text = fmtMiles(miles);
+
+        if (useRoads) {
+          const slice = routeLine!.coordinates.slice(routeLine!.wayPoints[i], routeLine!.wayPoints[i + 1] + 1).map(project);
+          const d = slice.length > 1 ? `M${slice.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L')}` : '';
+          let label: Placed | null = null;
+          for (const t of [0.5, 0.36, 0.64]) {
+            const at = slice[Math.min(slice.length - 1, Math.floor(slice.length * t))];
+            if (at) label = placeCentered(at, text, 11, taken, frame);
+            if (label) break;
+          }
+          return { d, isReturn, miles, label };
+        }
+
         const a = project(from);
         const b = project(routeNodes[i + 1]);
-        const isReturn = i === routeNodes.length - 2;
         const dx = b.x - a.x;
         const dy = b.y - a.y;
         const bow = (isReturn ? -0.16 : 0.1) * (i % 2 === 0 ? 1 : -1);
         const cx = (a.x + b.x) / 2 - dy * bow;
         const cy = (a.y + b.y) / 2 + dx * bow;
-        const miles = isReturn ? plan.returnMiles : plan.stops[i].legMiles;
         // Try the middle of the leg first, then nearby points along it.
         let label: Placed | null = null;
         for (const t of [0.5, 0.36, 0.64]) {
@@ -162,10 +185,10 @@ export function ChartMap({
             x: (1 - t) ** 2 * a.x + 2 * (1 - t) * t * cx + t * t * b.x,
             y: (1 - t) ** 2 * a.y + 2 * (1 - t) * t * cy + t * t * b.y,
           };
-          label = placeCentered(at, fmtMiles(miles), 11, taken, frame);
+          label = placeCentered(at, text, 11, taken, frame);
           if (label) break;
         }
-        return { a, b, cx, cy, miles, isReturn, label };
+        return { d: `M${a.x},${a.y} Q${cx},${cy} ${b.x},${b.y}`, isReturn, miles, label };
       })
     : [];
 
@@ -238,10 +261,7 @@ export function ChartMap({
           <g fill="none" strokeLinecap="round">
             {legs.map((leg, i) => (
               <g key={i}>
-                <path
-                  d={`M${leg.a.x},${leg.a.y} Q${leg.cx},${leg.cy} ${leg.b.x},${leg.b.y}`}
-                  className={leg.isReturn ? 'chart-route chart-route--return' : 'chart-route'}
-                />
+                <path d={leg.d} className={leg.isReturn ? 'chart-route chart-route--return' : 'chart-route'} />
                 {leg.label && (
                   <text x={leg.label.x} y={leg.label.y} className="chart-leg" textAnchor="middle" style={halo}>
                     {fmtMiles(leg.miles)}
@@ -320,6 +340,20 @@ export function ChartMap({
           </text>
         </g>
       </svg>
+
+      {credit && (
+        <p className="chart-credit">
+          Routes ©{' '}
+          <a href="https://openrouteservice.org" target="_blank" rel="noreferrer">
+            openrouteservice.org
+          </a>{' '}
+          by HeiGIT · Map data ©{' '}
+          <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
+            OpenStreetMap
+          </a>{' '}
+          contributors
+        </p>
+      )}
 
       {!plan && (
         <p className="chart-empty">Add items to your list and the route will appear here.</p>

@@ -2,15 +2,16 @@ import { ArrowRight, Compass, ListChecks, Map as MapIcon, Settings2, ShoppingBas
 import { useEffect, useMemo, useState } from 'react';
 import { CartPanel } from './components/CartPanel';
 import { ChartMap } from './components/ChartMap';
+import { LocationPicker } from './components/LocationPicker';
 import { PlanPanel } from './components/PlanPanel';
 import { planOptions, savingsVsBaseline } from './components/planOptions';
 import { ShoppingList } from './components/ShoppingList';
 import { TripSettings } from './components/TripSettings';
 import { miles, money } from './domain/format';
-import { providersFor, type DataMode } from './data/providers';
-import { NEIGHBORHOODS } from './data/seed';
+import { providersFor, type Capabilities, type DataMode } from './data/providers';
 import { useAppState, type Action, type AppState } from './state/appState';
 import { usePlanner } from './state/usePlanner';
+import { useRouteLine } from './state/useRouteLine';
 
 type Tab = 'basket' | 'trip' | 'map' | 'store';
 
@@ -25,11 +26,6 @@ function useMediaQuery(query: string): boolean {
   return matches;
 }
 
-interface Capabilities {
-  /** The server can look up real Kroger stores and prices. */
-  livePrices: boolean;
-}
-
 /** Ask the server what it can do. A static host or an offline server means demo only. */
 function useCapabilities(): Capabilities | null {
   const [caps, setCaps] = useState<Capabilities | null>(null);
@@ -37,11 +33,13 @@ function useCapabilities(): Capabilities | null {
     let cancelled = false;
     fetch('/api/health', { signal: AbortSignal.timeout(3000) })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((body: { ok?: boolean; livePrices?: boolean }) => {
-        if (!cancelled) setCaps({ livePrices: body.ok === true && body.livePrices === true });
+      .then((body: { ok?: boolean; livePrices?: boolean; liveRouting?: boolean }) => {
+        if (cancelled) return;
+        const ok = body.ok === true;
+        setCaps({ livePrices: ok && body.livePrices === true, liveRouting: ok && body.liveRouting === true });
       })
       .catch(() => {
-        if (!cancelled) setCaps({ livePrices: false });
+        if (!cancelled) setCaps({ livePrices: false, liveRouting: false });
       });
     return () => {
       cancelled = true;
@@ -69,21 +67,22 @@ export default function App() {
     );
   }
   // Keyed by mode so tabs and pinned comparisons start fresh when switching.
-  return <Workspace key={effective} state={state} dispatch={dispatch} mode={effective} canGoLive={caps.livePrices} />;
+  return <Workspace key={effective} state={state} dispatch={dispatch} mode={effective} caps={caps} />;
 }
 
 interface WorkspaceProps {
   state: AppState;
   dispatch: (a: Action) => void;
   mode: DataMode;
-  canGoLive: boolean;
+  caps: Capabilities;
 }
 
-function Workspace({ state, dispatch, mode, canGoLive }: WorkspaceProps) {
-  const providers = useMemo(() => providersFor(mode), [mode]);
+function Workspace({ state, dispatch, mode, caps }: WorkspaceProps) {
+  const canGoLive = caps.livePrices;
+  const providers = useMemo(() => providersFor(mode, caps), [mode, caps]);
   const cart = state.carts[mode];
   const { settings, checked } = state;
-  const planner = usePlanner(cart, settings, providers);
+  const planner = usePlanner(cart, settings, providers, mode);
   const isDesktop = useMediaQuery('(min-width: 1024px)');
 
   const [pinnedId, setPinnedId] = useState<string | null>(null);
@@ -94,7 +93,7 @@ function Workspace({ state, dispatch, mode, canGoLive }: WorkspaceProps) {
 
   // A pinned comparison only makes sense for the inputs it was pinned under.
   const cartKey = cart.map((l) => `${l.productId}:${l.qty}`).join(',');
-  useEffect(() => setPinnedId(null), [settings.mode, settings.flex, settings.maxDriveMinutes, settings.maxStops, settings.radiusMiles, settings.includeMembership, settings.homeId, cartKey]);
+  useEffect(() => setPinnedId(null), [settings.mode, settings.flex, settings.maxDriveMinutes, settings.maxStops, settings.radiusMiles, settings.includeMembership, settings.home.lat, settings.home.lon, settings.demoHomeId, cartKey]);
 
   const { planSet, recommended } = planner;
   const shown = useMemo(() => {
@@ -137,6 +136,7 @@ function Workspace({ state, dispatch, mode, canGoLive }: WorkspaceProps) {
   const shopPanel = (
     <ShoppingList plan={shown} checked={checked} dispatch={dispatch} activeStoreId={activeStoreId} onActiveStore={setActiveStoreId} />
   );
+  const routeLine = useRouteLine(providers, cart.length === 0 ? null : shown, planner.home);
   const chart = (
     <ChartMap
       market={planner.market}
@@ -146,7 +146,9 @@ function Workspace({ state, dispatch, mode, canGoLive }: WorkspaceProps) {
       includeMembership={settings.includeMembership}
       activeStoreId={activeStoreId}
       onActiveStore={setActiveStoreId}
-      homeLabel={planner.home.label}
+      homeLabel={planner.home.label.split(',')[0]}
+      routeLine={routeLine}
+      credit={providers.sources.routing === 'live'}
     />
   );
 
@@ -173,16 +175,16 @@ function Workspace({ state, dispatch, mode, canGoLive }: WorkspaceProps) {
             ))}
           </div>
         )}
-        <label className="place">
-          <span className="sr-only">Starting point</span>
-          <select value={settings.homeId} onChange={(e) => dispatch({ type: 'settings', patch: { homeId: e.target.value } })}>
-            {NEIGHBORHOODS.map((n) => (
-              <option key={n.id} value={n.id}>
-                {n.label} {n.zip}
-              </option>
-            ))}
-          </select>
-        </label>
+        <LocationPicker
+          place={planner.home}
+          canSearchAddresses={mode === 'live' && caps.liveRouting}
+          onSelect={(place) =>
+            dispatch({
+              type: 'settings',
+              patch: mode === 'live' ? { home: place } : { demoHomeId: place.id ?? settings.demoHomeId },
+            })
+          }
+        />
         <button className="btn-ghost" aria-label="Trip settings" onClick={() => setSettingsOpen(true)}>
           <Settings2 size={16} aria-hidden="true" />
           <span className="btn-label">Trip settings</span>

@@ -33,7 +33,11 @@ function toProduct(value: unknown): Product | null {
 
 const cache = new Map<string, Product[]>();
 
-/** Product search through our own `/api/catalog/search` proxy. Results are cached for the session. */
+/**
+ * Product search through our own `/api/catalog/search` proxy. Open Food Facts results are
+ * kept for the session; Kroger results are not, since Kroger's terms only allow keeping
+ * its content as long as its cache header permits (and it sends none).
+ */
 export const remoteCatalog: RemoteCatalog = {
   async search(query, signal) {
     const key = query.trim().toLowerCase();
@@ -42,9 +46,9 @@ export const remoteCatalog: RemoteCatalog = {
 
     const res = await fetch(`/api/catalog/search?q=${encodeURIComponent(query.trim())}`, { signal });
     if (!res.ok) throw new Error(`Catalog search failed (${res.status})`);
-    const body = (await res.json()) as { products?: unknown[] };
+    const body = (await res.json()) as { source?: string; products?: unknown[] };
     const products = (body.products ?? []).map(toProduct).filter((p): p is Product => p !== null);
-    cache.set(key, products);
+    if (body.source !== 'kroger') cache.set(key, products);
     return products;
   },
 };

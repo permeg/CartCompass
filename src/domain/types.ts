@@ -49,10 +49,25 @@ export interface CartLine {
   product: Product;
 }
 
-export interface Neighborhood extends LatLon {
-  id: string;
+/** Somewhere the user can start a trip from: a typed address, their location, or a preset area. */
+export interface Place extends LatLon {
   label: string;
+  /** Set for preset areas, so the demo can tell them apart from typed addresses. */
+  id?: string;
+}
+
+export interface Neighborhood extends Place {
+  id: string;
   zip: string;
+}
+
+/** A road route through several waypoints, split into legs by `wayPoints`. */
+export interface RouteLine {
+  coordinates: LatLon[];
+  /** Index in `coordinates` of each waypoint that was asked for. */
+  wayPoints: number[];
+  miles: number;
+  minutes: number;
 }
 
 /**

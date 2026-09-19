@@ -96,7 +96,8 @@ describe('GET /api/stores', () => {
     // Three QFCs at most, plus the Fred Meyer.
     expect(body.stores.filter((s) => s.chain === 'QFC')).toHaveLength(3);
     expect(body.stores.some((s) => s.id === 'kroger:70100023')).toBe(true);
-    expect(res.headers.get('cache-control')).toContain('s-maxage');
+    // Kroger sends no cache header, so its content must not be cached anywhere.
+    expect(res.headers.get('cache-control')).toBe('no-store');
 
     const url = fetchMock.mock.calls[1][0] as URL;
     expect(url.pathname).toBe('/v1/locations');
