@@ -8,10 +8,12 @@ interface Props {
   onClose: () => void;
   settings: Settings;
   marketGasPrice: number | null;
+  /** Live mode with other chains' stores available. */
+  canEstimate: boolean;
   dispatch: (a: Action) => void;
 }
 
-export function TripSettings({ open, onClose, settings, marketGasPrice, dispatch }: Props) {
+export function TripSettings({ open, onClose, settings, marketGasPrice, canEstimate, dispatch }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -129,10 +131,31 @@ export function TripSettings({ open, onClose, settings, marketGasPrice, dispatch
           </div>
         </div>
 
+        {canEstimate && (
+          <div className="field field--row">
+            <div className="field-label">
+              <span id="estimate-label">Include other stores, with estimated prices</span>
+              <span className="muted small">
+                Walmart, Aldi, Target and others don’t publish prices. We estimate them from a real nearby price and
+                published price studies, so treat them as rough. Estimated stops are always marked.
+              </span>
+            </div>
+            <button
+              role="switch"
+              aria-checked={settings.includeEstimated}
+              aria-labelledby="estimate-label"
+              className={`switch ${settings.includeEstimated ? 'is-on' : ''}`}
+              onClick={() => set({ includeEstimated: !settings.includeEstimated })}
+            >
+              <span />
+            </button>
+          </div>
+        )}
+
         <div className="field field--row">
           <div className="field-label">
             <span id="member-label">Include membership stores</span>
-            <span className="muted small">Harbor Wholesale needs a paid membership.</span>
+            <span className="muted small">Warehouse clubs like Costco need a paid membership.</span>
           </div>
           <button
             role="switch"

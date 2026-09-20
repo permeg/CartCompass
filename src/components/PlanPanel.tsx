@@ -14,6 +14,8 @@ interface Props {
   market: Market | null;
   cartEmpty: boolean;
   loading: boolean;
+  /** Other chains' stores are still being found. */
+  estimating: boolean;
   error: string | null;
   onRetry: () => void;
   dispatch: (a: Action) => void;
@@ -28,8 +30,14 @@ export function PlanPanel(props: Props) {
     <section className="panel-body" aria-labelledby="plan-heading">
       <div className="panel-head">
         <h2 id="plan-heading">Your trip</h2>
-        <DataBadge sources={props.market?.sources} />
+        <DataBadge sources={props.market?.sources} hasEstimates={!!props.market?.stores.some((st) => st.estimated)} />
       </div>
+
+      {props.estimating && (
+        <p className="muted small estimating" role="status">
+          Looking for other stores nearby…
+        </p>
+      )}
 
       {error && (
         <p className="notice notice--warn" role="alert">
@@ -45,11 +53,12 @@ export function PlanPanel(props: Props) {
       {cartEmpty ? (
         <p className="empty-plan">Add a few items to your list and your route will show up here.</p>
       ) : !planSet || !recommended || !shown ? (
-        error ? null : <PlanEmpty planSet={planSet} loading={props.loading} settings={settings} />
+        error ? null : <PlanEmpty planSet={planSet} loading={props.loading} settings={settings} live={props.market?.sources.prices === 'live'} />
       ) : (
         <>
           <Hero planSet={planSet} plan={shown} />
           <TradeoffNote planSet={planSet} plan={shown} mode={settings.mode} flex={settings.flex} />
+          <EstimateNote planSet={planSet} plan={shown} />
           <Ledger {...props} plan={shown} planSet={planSet} />
           {planSet.unavailable.length > 0 && (
             <p className="notice notice--warn">
@@ -72,7 +81,7 @@ const SOURCE_LABELS: Record<keyof DataSources, string> = {
   gas: 'gas price',
 };
 
-function DataBadge({ sources }: { sources: DataSources | undefined }) {
+function DataBadge({ sources, hasEstimates }: { sources: DataSources | undefined; hasEstimates: boolean }) {
   if (!sources) return null;
   const entries = Object.entries(sources) as [keyof DataSources, DataSources[keyof DataSources]][];
   const real = entries.filter(([, v]) => v === 'live').map(([k]) => SOURCE_LABELS[k]);
@@ -80,14 +89,17 @@ function DataBadge({ sources }: { sources: DataSources | undefined }) {
 
   if (estimated.length === 0) {
     return (
-      <span className="tag tag--live" title="Stores, prices, drive times and gas are all real.">
+      <span
+        className="tag tag--live"
+        title={`Stores, prices, drive times and gas are all real.${hasEstimates ? ' Other chains use estimated prices, and are marked.' : ''}`}
+      >
         Live data
       </span>
     );
   }
   if (sources.prices === 'live') {
     return (
-      <span className="tag tag--live" title={`Real: ${real.join(', ')}. Estimated: ${estimated.join(', ')}.`}>
+      <span className="tag tag--live" title={`Real: ${real.join(', ')}. Estimated: ${estimated.join(', ')}.${hasEstimates ? ' Some other stores use estimated prices.' : ''}`}>
         Live prices
       </span>
     );
@@ -126,6 +138,19 @@ function Footnote({ market, settings }: { market: Market | null; settings: Setti
           {asOf ? `, as of ${asOf.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}` : ''}. Sale prices may
           need the store’s loyalty card. Only Kroger-family stores (QFC, Fred Meyer) publish prices, so other chains aren’t
           included. This app isn’t affiliated with or endorsed by Kroger.
+          {market.stores.some((st) => st.estimated) && (
+            <>
+              {' '}
+              Prices marked ~ are estimates for stores that don’t publish prices. Each starts from a real price for the same
+              item and is scaled by how the chain compares with Kroger in Consumer Reports’ 2025 study of six metros (for
+              example, Aldi about 20% lower, Walmart about 13% lower, Whole Foods about 22% higher). Aldi and Lidl are only
+              estimated for store-brand and fresh items, and warehouse clubs sell larger packs. Their locations are ©{' '}
+              <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
+                OpenStreetMap
+              </a>{' '}
+              contributors.
+            </>
+          )}
         </>
       ) : (
         asOf && (
@@ -136,11 +161,12 @@ function Footnote({ market, settings }: { market: Market | null; settings: Setti
   );
 }
 
-function PlanEmpty({ planSet, loading, settings }: { planSet: PlanSet | null; loading: boolean; settings: Settings }) {
+function PlanEmpty({ planSet, loading, settings, live }: { planSet: PlanSet | null; loading: boolean; settings: Settings; live: boolean }) {
   if (loading && !planSet) return <p className="empty-plan">Working out your route…</p>;
   if (planSet && planSet.storesConsidered === 0) {
     return (
       <p className="notice notice--warn">
+        {live && 'There are no Kroger-family stores near here, so there are no real prices to compare, and estimates for other chains need a real price to start from. '}
         {settings.radiusMiles <= 10 ? `No stores within ${settings.radiusMiles} miles of here. ` : 'No stores found near here. '}
         {settings.radiusMiles < 15 ? 'Try a larger distance in Trip settings, or a different starting point.' : 'Try a different starting point.'}
       </p>
@@ -279,6 +305,13 @@ function Hero({ planSet, plan }: { planSet: PlanSet; plan: Plan }) {
     }
   }
 
+  if (plan.estimated) {
+    // A guess shouldn't read like a fact.
+    label = label === 'You save' ? 'You could save about' : label === 'Costs extra' ? 'Could cost about' : 'Your trip could cost about';
+    figure = `~${figure}`;
+    sub = `${sub}. Includes estimated prices.`;
+  }
+
   return (
     <div className="hero">
       <div className="eyebrow">{label}</div>
@@ -301,6 +334,26 @@ function Hero({ planSet, plan }: { planSet: PlanSet; plan: Plan }) {
         </div>
       </dl>
     </div>
+  );
+}
+
+/** Says which stops are guesses, and what the best trip with only real prices would be. */
+function EstimateNote({ planSet, plan }: { planSet: PlanSet; plan: Plan }) {
+  if (!plan.estimated) return null;
+  const names = plan.stops.filter((s) => s.store.estimated).map((s) => s.store.name);
+  const real = planSet.cheapestReal;
+  let compare = '';
+  if (real && real.id !== plan.id) {
+    const diff = real.total - plan.total;
+    compare = ` The best trip using only real prices costs ${money(real.total)}${
+      diff > 0 ? `, about ${money(diff)} more` : diff < 0 ? `, about ${money(-diff)} less` : ''
+    }.`;
+  }
+  return (
+    <p className="tradeoff tradeoff--est">
+      Prices at {names.join(' and ')} {names.length === 1 ? 'are an estimate' : 'are estimates'}: a real nearby price for the same
+      item, scaled by how the chain compares in a 2025 Consumer Reports study.{compare}
+    </p>
   );
 }
 
@@ -347,7 +400,10 @@ function Ledger({
             {i + 1}
           </span>
           <div className="ledger-main">
-            <span className="ledger-name">{stop.store.name}</span>
+            <span className="ledger-name">
+              {stop.store.name}
+              {stop.store.estimated && <span className="est-tag">estimated</span>}
+            </span>
             <span className="muted small">
               {plural(
                 stop.lines.reduce((n, l) => n + l.qty, 0),
@@ -357,7 +413,7 @@ function Ledger({
             </span>
           </div>
           <span className="leader" aria-hidden="true" />
-          <span className="num">{money(stop.subtotal)}</span>
+          <span className="num">{stop.store.estimated ? '~' : ''}{money(stop.subtotal)}</span>
         </li>
       ))}
       <li className="ledger-row">
@@ -374,7 +430,7 @@ function Ledger({
       <li className="ledger-total">
         <span>Total</span>
         <span className="leader" aria-hidden="true" />
-        <span className="num">{money(plan.total)}</span>
+        <span className="num">{plan.estimated ? '~' : ''}{money(plan.total)}</span>
       </li>
       {base && base.id !== plan.id && (
         <li className="ledger-row muted">
@@ -423,7 +479,7 @@ function Compare({
                 <span className="muted small">{plan.stops.map((s) => s.store.name).join(' → ')}</span>
               </span>
               <span className="compare-nums num">
-                <span>{money(plan.total)}</span>
+                <span>{plan.estimated ? '~' : ''}{money(plan.total)}</span>
                 <span className="muted small">{minutes(plan.totalMinutes)}</span>
               </span>
             </button>

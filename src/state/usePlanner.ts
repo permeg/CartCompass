@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { loadMarket, type DataMode, type Providers } from '../data/providers';
+import { addEstimatedStores, loadMarket, type DataMode, type Providers } from '../data/providers';
 import { NEIGHBORHOODS } from '../data/seed';
 import { limitDriveTime, maxUsefulFlex, planTrips, recommend } from '../domain/optimizer';
 import type { CartLine, Market, Place, Plan, PlanSet, Product } from '../domain/types';
@@ -15,6 +15,8 @@ export interface Planner {
   /** Upper bound for the "spend more to save time" slider, in cents. */
   maxFlex: number;
   loading: boolean;
+  /** Other chains' stores are still being found. The real-price plan is already showing. */
+  estimating: boolean;
   error: string | null;
   /** Fetch prices again after a failure. */
   retry: () => void;
@@ -30,12 +32,14 @@ export function startingPlace(mode: DataMode, settings: Settings): Place {
  * store sells, so people only find things they can actually buy nearby.
  */
 export function nearestStoreId(market: Market | null): string | undefined {
-  if (!market || market.sources.stores !== 'live' || market.stores.length === 0) return undefined;
-  let best = 0;
-  for (let i = 1; i < market.stores.length; i++) {
-    if (market.miles[0][i + 1] < market.miles[0][best + 1]) best = i;
+  if (!market || market.sources.stores !== 'live') return undefined;
+  // Only real stores: estimated ones aren't Kroger stores and can't be searched.
+  let best = -1;
+  for (let i = 0; i < market.stores.length; i++) {
+    if (market.stores[i].estimated) continue;
+    if (best === -1 || market.miles[0][i + 1] < market.miles[0][best + 1]) best = i;
   }
-  return market.stores[best].id;
+  return best === -1 ? undefined : market.stores[best].id;
 }
 
 interface Loaded {
@@ -96,7 +100,7 @@ export function usePlanner(cart: CartLine[], settings: Settings, providers: Prov
   }, [home.lat, home.lon, productKey, settings.radiusMiles, providers, attempt]);
 
   // A market only describes the products, origin and providers it was fetched for.
-  const market =
+  const baseMarket =
     loaded &&
     loaded.providers === providers &&
     loaded.market.origin.lat === home.lat &&
@@ -104,6 +108,38 @@ export function usePlanner(cart: CartLine[], settings: Settings, providers: Prov
     cart.every((l) => loaded.market.requested.has(l.productId))
       ? loaded.market
       : null;
+
+  // Second phase: other chains' stores. Finding them can take a while (a shared public server),
+  // so the plan built from real prices shows first, and these are added when they arrive.
+  const [enriched, setEnriched] = useState<{ base: Market; market: Market } | null>(null);
+  const [estimating, setEstimating] = useState(false);
+  useEffect(() => {
+    if (!baseMarket || !settings.includeEstimated || !providers.places) {
+      setEnriched(null);
+      setEstimating(false);
+      return;
+    }
+    let cancelled = false;
+    setEstimating(true);
+    addEstimatedStores(
+      baseMarket,
+      cart.map((l) => l.product),
+      settings.radiusMiles,
+      providers,
+    )
+      .then((market) => {
+        if (!cancelled) setEnriched({ base: baseMarket, market });
+      })
+      .finally(() => {
+        if (!cancelled) setEstimating(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // `cart` is covered by `baseMarket`, which is rebuilt whenever the products change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseMarket, settings.includeEstimated, settings.radiusMiles, providers]);
+  const market = enriched && enriched.base === baseMarket ? enriched.market : baseMarket;
 
   const computed = useMemo(() => {
     if (!market) return null;
@@ -121,6 +157,7 @@ export function usePlanner(cart: CartLine[], settings: Settings, providers: Prov
   const lastGood = useRef(computed);
   if (computed) lastGood.current = computed;
   const shown = computed ?? (lastGood.current?.providers === providers ? lastGood.current : null);
+  // (While the estimates setting flips, the last plan stays up until the new one loads.)
 
   // The drive-time limit only applies when the user is trading money for time.
   const basePlanSet = shown?.planSet ?? null;
@@ -139,6 +176,7 @@ export function usePlanner(cart: CartLine[], settings: Settings, providers: Prov
     recommended,
     maxFlex: planSet ? maxUsefulFlex(planSet) : 0,
     loading,
+    estimating,
     error,
     retry: () => setAttempt((n) => n + 1),
   };

@@ -20,6 +20,8 @@ export interface Settings {
   /** Cents per gallon. Null means "use the market's price". */
   gasPriceOverride: number | null;
   includeMembership: boolean;
+  /** Also consider other chains' stores (Walmart, Aldi...), with prices estimated from real ones. */
+  includeEstimated: boolean;
 }
 
 export interface AppState {
@@ -65,6 +67,7 @@ export const DEFAULT_SETTINGS: Settings = {
   mpg: 26,
   gasPriceOverride: null,
   includeMembership: false,
+  includeEstimated: true,
 };
 
 /** Settings saved before addresses existed only had a `homeId`. */

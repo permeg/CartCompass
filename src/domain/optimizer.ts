@@ -68,6 +68,7 @@ export function planTrips(
 
   const empty: PlanSet = {
     cheapest: null,
+    cheapestReal: null,
     fastest: null,
     baseline: null,
     frontier: [],
@@ -122,7 +123,8 @@ export function planTrips(
 
   if (plans.length === 0) return empty;
 
-  const singles = plans.filter((p) => p.stops.length === 1);
+  // "You save" is measured against a real store, never against a guess.
+  const singles = plans.filter((p) => p.stops.length === 1 && !p.estimated);
   const baseline =
     [...singles].sort(
       (a, b) =>
@@ -145,8 +147,12 @@ function summarize(plans: Plan[], baseline: Plan | null, unavailable: Product[],
     }
   }
 
+  // Only worth reporting when some plans rely on guesses, so there is something to compare it with.
+  const cheapestReal = plans.some((p) => p.estimated) ? (byCost.find((p) => !p.estimated) ?? null) : null;
+
   return {
     cheapest: byCost[0],
+    cheapestReal,
     fastest: byTime[0],
     baseline,
     frontier,
@@ -210,6 +216,7 @@ function buildPlan(
   return {
     id: stops.map((s) => s.store.id).join('>'),
     stops,
+    estimated: stops.some((s) => s.store.estimated === true),
     itemsTotal,
     gasCost,
     total: itemsTotal + gasCost,

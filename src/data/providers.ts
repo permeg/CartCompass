@@ -8,7 +8,9 @@
  */
 import { haversineMiles } from '../domain/geo';
 import type { CartLine, Category, DataSources, LatLon, Market, Product, RouteLine, Store } from '../domain/types';
+import { estimatePrices } from '../domain/estimate';
 import { liveGas } from './gasClient';
+import { livePlaces } from './placesClient';
 import { liveStores, livePrices } from './krogerClient';
 import { liveRouting } from './orsClient';
 import { LIVE_QUICK_ADDS, LIVE_SAMPLE_CART } from './liveSample';
@@ -42,6 +44,11 @@ export interface RemoteCatalog {
 
 export interface StoreProvider {
   storesNear(origin: LatLon, radiusMiles: number): Promise<Store[]>;
+}
+
+/** Stores whose prices aren't published, so they get estimated ones. Always returned with `estimated: true`. */
+export interface PlaceProvider {
+  placesNear(origin: LatLon, radiusMiles: number): Promise<Store[]>;
 }
 
 export interface PriceProvider {
@@ -80,6 +87,8 @@ export interface Providers {
   /** What a first-time visitor's list starts with. */
   sampleCart(): CartLine[];
   stores: StoreProvider;
+  /** Other chains' stores, priced by estimate. Absent in demo mode. */
+  places?: PlaceProvider;
   prices: PriceProvider;
   gas: GasProvider;
   routing: RoutingProvider;
@@ -177,7 +186,7 @@ export const demoProviders: Providers = {
  * through Kroger's product catalog. Drive times come from OpenRouteService and gas
  * prices from the EIA when the server has those keys, and are estimates otherwise.
  */
-function buildLive(routingLive: boolean, gasLive: boolean): Providers {
+function buildLive(routingLive: boolean, gasLive: boolean, placesLive: boolean): Providers {
   return {
     ...demoProviders,
     sources: { stores: 'live', prices: 'live', routing: routingLive ? 'live' : 'demo', gas: gasLive ? 'live' : 'demo' },
@@ -188,6 +197,7 @@ function buildLive(routingLive: boolean, gasLive: boolean): Providers {
     },
     sampleCart: () => LIVE_SAMPLE_CART,
     stores: liveStores,
+    places: placesLive ? livePlaces : undefined,
     prices: livePrices,
     routing: routingLive ? liveRouting : demoProviders.routing,
     gas: gasLive ? liveGas : demoProviders.gas,
@@ -203,6 +213,8 @@ export interface Capabilities {
   liveRouting: boolean;
   /** The server can look up current gas prices. */
   liveGas: boolean;
+  /** The server can find other chains' stores, so they can be priced by estimate. */
+  livePlaces: boolean;
 }
 
 // Provider sets are cached so their identity is stable. The planner uses that to tell
@@ -214,12 +226,12 @@ const cache = new Map<string, Providers>();
  * gives the demo data a real catalog to search, for servers with no Kroger keys.
  */
 export function providersFor(mode: DataMode, caps: Capabilities): Providers {
-  const key = mode === 'live' ? `live:${caps.liveRouting}:${caps.liveGas}` : 'demo';
+  const key = mode === 'live' ? `live:${caps.liveRouting}:${caps.liveGas}:${caps.livePlaces}` : 'demo';
   let providers = cache.get(key);
   if (!providers) {
     providers =
       mode === 'live'
-        ? buildLive(caps.liveRouting, caps.liveGas)
+        ? buildLive(caps.liveRouting, caps.liveGas, caps.livePlaces)
         : import.meta.env.VITE_LIVE_CATALOG === 'true'
           ? { ...demoProviders, catalog: { local: demoCatalog, remote: remoteCatalog } }
           : demoProviders;
@@ -228,12 +240,22 @@ export function providersFor(mode: DataMode, caps: Capabilities): Providers {
   return providers;
 }
 
-/** Gather everything the optimizer needs for this origin and set of products. */
+export interface LoadOptions {
+  /** Also include other chains' stores, with prices estimated from the real ones. */
+  includeEstimated?: boolean;
+}
+
+/**
+ * Gather everything the optimizer needs for this origin and set of products: real stores,
+ * real prices, drive times and gas. With `includeEstimated`, other chains' stores are added
+ * too (see `addEstimatedStores`), but that can be slow, so the app usually asks for them separately.
+ */
 export async function loadMarket(
   origin: LatLon,
   products: Product[],
   radiusMiles: number,
   providers: Providers,
+  options: LoadOptions = {},
 ): Promise<Market> {
   // Ask for a wider ring than the user's radius so a bigger radius doesn't need a refetch.
   const stores = await providers.stores.storesNear(origin, Math.max(radiusMiles, 15));
@@ -262,7 +284,7 @@ export async function loadMarket(
     gas,
     matrix,
   ]);
-  return {
+  const market: Market = {
     origin,
     stores,
     prices,
@@ -273,5 +295,49 @@ export async function loadMarket(
     requested: new Set(products.map((p) => p.id)),
     sources: { ...providers.sources, routing, gas: gasSource },
     pricesAsOf: asOf,
+  };
+  return options.includeEstimated ? addEstimatedStores(market, products, radiusMiles, providers) : market;
+}
+
+/**
+ * Add other chains' stores (Walmart, Aldi, Target...) to a market that already has real prices.
+ * Their prices are guesses: a real price for the same item, scaled by the chain's overall price
+ * level. If anything goes wrong (or there are no real stores to scale from), the market is
+ * returned unchanged, so a failure here never costs the user their real-price plan.
+ */
+export async function addEstimatedStores(
+  market: Market,
+  products: Product[],
+  radiusMiles: number,
+  providers: Providers,
+): Promise<Market> {
+  const realStores = market.stores.filter((s) => !s.estimated);
+  if (!providers.places || realStores.length === 0) return market;
+
+  let others: Store[];
+  try {
+    others = await providers.places.placesNear(market.origin, Math.min(Math.max(radiusMiles, 5), 15));
+  } catch (err) {
+    console.warn('Other stores unavailable, using real stores only:', err);
+    return market;
+  }
+  if (others.length === 0) return market;
+
+  const stores = [...realStores, ...others];
+  let routes: { miles: number[][]; minutes: number[][] };
+  try {
+    routes = await providers.routing.matrix([market.origin, ...stores]);
+  } catch (err) {
+    console.warn('Couldn’t time the trip to other stores, using real stores only:', err);
+    return market;
+  }
+
+  const realPrices = Object.fromEntries(realStores.map((s) => [s.id, market.prices[s.id] ?? {}]));
+  return {
+    ...market,
+    stores,
+    prices: { ...realPrices, ...estimatePrices(others, products, realStores, realPrices, routes.miles[0]) },
+    miles: routes.miles,
+    minutes: routes.minutes,
   };
 }

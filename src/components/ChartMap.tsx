@@ -279,7 +279,7 @@ export function ChartMap({
           return (
             <g
               key={s.id}
-              className={`chart-other ${activeStoreId === s.id ? 'is-active' : ''}`}
+              className={`chart-other ${s.estimated ? 'chart-other--est' : ''} ${activeStoreId === s.id ? 'is-active' : ''}`}
               onMouseEnter={() => onActiveStore(s.id)}
               onMouseLeave={() => onActiveStore(null)}
             >
@@ -307,7 +307,7 @@ export function ChartMap({
           return (
             <g
               key={stop.store.id}
-              className={`chart-stop ${activeStoreId === stop.store.id ? 'is-active' : ''}`}
+              className={`chart-stop ${stop.store.estimated ? 'chart-stop--est' : ''} ${activeStoreId === stop.store.id ? 'is-active' : ''}`}
               onMouseEnter={() => onActiveStore(stop.store.id)}
               onMouseLeave={() => onActiveStore(null)}
             >

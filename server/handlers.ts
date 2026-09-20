@@ -6,6 +6,7 @@ import { pickCatalogSource, searchCatalog } from './providers';
 import { eiaConfig, eiaRegularGas, gasAreaFor } from './providers/eia';
 import { krogerConfig, krogerPrices, krogerStarter, krogerStoresNear } from './providers/kroger';
 import { orsConfig, orsGeocode, orsMatrix, orsRoute, orsState } from './providers/ors';
+import { osmChainStores } from './providers/osm';
 import { allow } from './rateLimit';
 
 /**
@@ -126,6 +127,27 @@ export async function prices(request: Request, env: Env): Promise<Response> {
   }
 }
 
+/** GET /api/places?lat=47.6&lon=-122.2&radius=10: stores of chains that don't publish prices (OpenStreetMap). */
+export async function places(request: Request): Promise<Response> {
+  if (request.method !== 'GET') return error(405, 'method_not_allowed', 'Use GET.');
+  const params = new URL(request.url).searchParams;
+  const lat = num(params.get('lat'));
+  const lon = num(params.get('lon'));
+  const radius = num(params.get('radius')) ?? 10;
+  if (lat === null || lon === null || !validPoint(lat, lon)) return error(400, 'bad_location', 'Send lat and lon as numbers.');
+  if (radius < 1 || radius > 15) return error(400, 'bad_radius', 'Radius must be between 1 and 15 miles.');
+
+  if (!allow(`places:${clientId(request)}`, 20)) return error(429, 'rate_limited', 'Too many requests. Try again in a minute.');
+
+  try {
+    const found = await osmChainStores({ lat, lon }, radius);
+    // OpenStreetMap data is open (ODbL), so unlike Kroger's it can be cached.
+    return json({ places: found }, { cache: 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800' });
+  } catch (err) {
+    return failure('places', err, 'places_unavailable', 'Other stores are unavailable right now.');
+  }
+}
+
 /** GET /api/starter?store=kroger:70500808: a starter list of staples that store sells, with its prices. */
 export async function starter(request: Request, env: Env): Promise<Response> {
   if (request.method !== 'GET') return error(405, 'method_not_allowed', 'Use GET.');
@@ -198,8 +220,8 @@ async function readPoints(request: Request, min: number, max: number): Promise<L
 /** POST /api/matrix { points: [...] }: driving miles and minutes between every pair. */
 export async function matrix(request: Request, env: Env): Promise<Response> {
   if (request.method !== 'POST') return error(405, 'method_not_allowed', 'Use POST.');
-  const points = await readPoints(request, 2, 14);
-  if (!points) return error(400, 'bad_points', 'Send 2 to 14 points as { lat, lon }.');
+  const points = await readPoints(request, 2, 30);
+  if (!points) return error(400, 'bad_points', 'Send 2 to 30 points as { lat, lon }.');
 
   const config = orsConfig(env);
   if (!config) return error(501, 'not_configured', 'Drive times are not set up on this server.');
@@ -278,5 +300,7 @@ export async function health(_request: Request, env: Env): Promise<Response> {
     livePrices: krogerConfig(env) !== null,
     liveRouting: orsConfig(env) !== null,
     liveGas: eiaConfig(env) !== null,
+    // Finding other chains' stores needs no key, so this is on wherever the server is.
+    livePlaces: true,
   });
 }

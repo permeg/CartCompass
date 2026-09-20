@@ -33,17 +33,18 @@ function useCapabilities(): Capabilities | null {
     let cancelled = false;
     fetch('/api/health', { signal: AbortSignal.timeout(3000) })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((body: { ok?: boolean; livePrices?: boolean; liveRouting?: boolean; liveGas?: boolean }) => {
+      .then((body: { ok?: boolean; livePrices?: boolean; liveRouting?: boolean; liveGas?: boolean; livePlaces?: boolean }) => {
         if (cancelled) return;
         const ok = body.ok === true;
         setCaps({
           livePrices: ok && body.livePrices === true,
           liveRouting: ok && body.liveRouting === true,
           liveGas: ok && body.liveGas === true,
+          livePlaces: ok && body.livePlaces === true,
         });
       })
       .catch(() => {
-        if (!cancelled) setCaps({ livePrices: false, liveRouting: false, liveGas: false });
+        if (!cancelled) setCaps({ livePrices: false, liveRouting: false, liveGas: false, livePlaces: false });
       });
     return () => {
       cancelled = true;
@@ -97,7 +98,7 @@ function Workspace({ state, dispatch, mode, caps }: WorkspaceProps) {
 
   // A pinned comparison only makes sense for the inputs it was pinned under.
   const cartKey = cart.map((l) => `${l.productId}:${l.qty}`).join(',');
-  useEffect(() => setPinnedId(null), [settings.mode, settings.flex, settings.maxDriveMinutes, settings.maxStops, settings.radiusMiles, settings.includeMembership, settings.home.lat, settings.home.lon, settings.demoHomeId, cartKey]);
+  useEffect(() => setPinnedId(null), [settings.mode, settings.flex, settings.maxDriveMinutes, settings.maxStops, settings.radiusMiles, settings.includeMembership, settings.includeEstimated, settings.home.lat, settings.home.lon, settings.demoHomeId, cartKey]);
 
   const { planSet, recommended } = planner;
   const shown = useMemo(() => {
@@ -131,6 +132,7 @@ function Workspace({ state, dispatch, mode, caps }: WorkspaceProps) {
       market={planner.market}
       cartEmpty={cart.length === 0}
       loading={planner.loading}
+      estimating={planner.estimating}
       error={planner.error}
       onRetry={planner.retry}
       dispatch={dispatch}
@@ -172,7 +174,7 @@ function Workspace({ state, dispatch, mode, caps }: WorkspaceProps) {
                 role="radio"
                 aria-checked={mode === m}
                 className={mode === m ? 'is-on' : ''}
-                title={m === 'live' ? 'Real QFC and Fred Meyer prices' : 'Invented stores and prices, for trying the app'}
+                title={m === 'live' ? 'Real Kroger-family prices, plus estimates for other stores' : 'Invented stores and prices, for trying the app'}
                 onClick={() => dispatch({ type: 'choose', mode: m })}
               >
                 {m === 'live' ? 'Live' : 'Demo'}
@@ -204,6 +206,7 @@ function Workspace({ state, dispatch, mode, caps }: WorkspaceProps) {
       onClose={() => setSettingsOpen(false)}
       settings={settings}
       marketGasPrice={planner.market?.gasPrice ?? null}
+      canEstimate={mode === 'live' && caps.livePlaces}
       dispatch={dispatch}
     />
   );

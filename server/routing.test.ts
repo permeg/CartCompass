@@ -158,7 +158,7 @@ describe('POST /api/matrix', () => {
       'not json',
       {},
       { points: [home] },
-      { points: Array.from({ length: 15 }, () => home) },
+      { points: Array.from({ length: 31 }, () => home) },
       { points: [home, { lat: 'x', lon: 1 }] },
       { points: [home, { lat: 95, lon: 1 }] },
       { points: [home, { lat: 1 }] },

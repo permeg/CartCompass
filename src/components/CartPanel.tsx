@@ -6,10 +6,13 @@ import { searchCatalog } from '../domain/search';
 import type { CartLine, Market, Product } from '../domain/types';
 import type { Action } from '../state/appState';
 
+/** The lowest real shelf price. Estimated stores are left out: "from $x" should be a price you can actually pay. */
 function lowestPrice(market: Market | null, productId: string): number | null {
   if (!market) return null;
-  const all = Object.values(market.prices)
-    .map((byProduct) => byProduct[productId])
+  const estimated = new Set(market.stores.filter((s) => s.estimated).map((s) => s.id));
+  const all = Object.entries(market.prices)
+    .filter(([storeId]) => !estimated.has(storeId))
+    .map(([, byProduct]) => byProduct[productId])
     .filter((v): v is number => v !== undefined);
   return all.length ? Math.min(...all) : null;
 }

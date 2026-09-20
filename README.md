@@ -31,6 +31,10 @@ in demo mode only.
   `matrix`, `route`, `gas`, `health`.
 - Kroger's API sends no cache header, so anything from Kroger is served `no-store` and never cached.
 - The address you type is sent to OpenRouteService and saved only in your browser.
+- **Other chains (estimated prices).** Walmart, Target, Aldi and others don't publish prices, so their stores come from
+  OpenStreetMap and their prices are estimates: a real Kroger-family price for the same item, scaled by Consumer
+  Reports' 2025 price comparison of chains. Estimates are always marked ("~", an "estimated" chip), the trip list
+  always includes a best-with-real-prices option, and the whole thing can be switched off in Trip settings. No key needed.
 - Add `EIA_API_KEY` (eia.gov/opendata, free) for real gas prices: the U.S. Energy Information Administration's
   weekly average for the nearest metro area, state or region. Without it, gas is an estimate.
 - With no Kroger keys, `npm run dev:live` gives demo mode a real product search from Open Food Facts.

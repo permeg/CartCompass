@@ -8,12 +8,14 @@ export interface PlanOption {
 
 /**
  * The handful of plans worth comparing, de-duplicated: when the recommended plan
- * is also the cheapest, it appears once with both tags.
+ * is also the cheapest, it appears once with both tags. When some plans rely on
+ * estimated prices, the best plan built only from real prices is always offered too.
  */
 export function planOptions(set: PlanSet, recommended: Plan): PlanOption[] {
   const candidates: [string, Plan | null][] = [
     ['Recommended', recommended],
     ['Cheapest', set.cheapest],
+    ['Best with real prices', set.cheapestReal],
     ['Fastest', set.fastest],
     ['Nearest store only', set.baseline],
   ];

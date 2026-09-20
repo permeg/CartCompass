@@ -38,6 +38,10 @@ export interface Store extends LatLon {
   blurb: string;
   /** Retail chain, e.g. "QFC". Missing for the invented demo stores. */
   chain?: string;
+  /** This store doesn't publish prices, so its prices are guesses. See `domain/estimate.ts`. */
+  estimated?: boolean;
+  /** Which entry in `domain/chains.ts` an estimated store is. */
+  chainKey?: string;
   /** Prices only apply to members. Excluded unless the user opts in. */
   membership?: boolean;
 }
@@ -134,6 +138,8 @@ export interface Plan {
   /** Stable key from the ordered store ids. */
   id: string;
   stops: PlanStop[];
+  /** At least one stop's prices are guesses. */
+  estimated: boolean;
   itemsTotal: number;
   gasCost: number;
   /** items + gas */
@@ -149,6 +155,8 @@ export interface Plan {
 
 export interface PlanSet {
   cheapest: Plan | null;
+  /** The cheapest plan using only real prices. Null when there are no estimated stores to compare against. */
+  cheapestReal: Plan | null;
   fastest: Plan | null;
   /** Nearest single store that stocks the whole cart. Null if none does. */
   baseline: Plan | null;

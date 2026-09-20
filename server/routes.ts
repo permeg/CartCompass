@@ -1,4 +1,4 @@
-import { catalogSearch, gas, geocode, health, matrix, prices, route, starter, stores } from './handlers';
+import { catalogSearch, gas, geocode, health, matrix, places, prices, route, starter, stores } from './handlers';
 import type { Env } from './http';
 
 /** The one place API paths are defined, shared by the dev server. The Cloudflare functions in `functions/` mirror it. */
@@ -7,6 +7,7 @@ export const routes: Record<string, (request: Request, env: Env) => Promise<Resp
   '/api/stores': stores,
   '/api/prices': prices,
   '/api/starter': starter,
+  '/api/places': places,
   '/api/geocode': geocode,
   '/api/matrix': matrix,
   '/api/route': route,

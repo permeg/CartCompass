@@ -50,16 +50,20 @@ export function ShoppingList({ plan, checked, dispatch, activeStoreId, onActiveS
               {i + 1}
             </span>
             <div className="ledger-main">
-              <h3>{stop.store.name}</h3>
+              <h3>
+                {stop.store.name}
+                {stop.store.estimated && <span className="est-tag">estimated</span>}
+              </h3>
               <span className="muted small">
                 {plural(
                   stop.lines.reduce((n, l) => n + l.qty, 0),
                   'item',
                 )}
                 {stop.store.membership ? ' · membership required' : ''}
+                {stop.store.estimated ? ' · prices are estimates' : ''}
               </span>
             </div>
-            <span className="num">{money(stop.subtotal)}</span>
+            <span className="num">{stop.store.estimated ? '~' : ''}{money(stop.subtotal)}</span>
           </div>
           <ul>
             {[...stop.lines]
@@ -82,7 +86,7 @@ export function ShoppingList({ plan, checked, dispatch, activeStoreId, onActiveS
                         {line.qty > 1 && <span className="num">{line.qty} × </span>}
                         {line.product.name} <span className="muted small">{line.product.size}</span>
                       </span>
-                      <span className="num muted">{money(line.total)}</span>
+                      <span className="num muted">{stop.store.estimated ? '~' : ''}{money(line.total)}</span>
                     </button>
                   </li>
                 );

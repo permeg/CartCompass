@@ -1278,3 +1278,40 @@ input[type='range']::-moz-range-thumb {
     min-height: 44px;
   }
 }
+
+/* ---------- estimated prices ---------- */
+.est-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px;
+  border: 1px dashed var(--warn);
+  border-radius: 3px;
+  color: var(--warn);
+  font: 500 10.5px/1.5 var(--mono);
+  letter-spacing: 0.03em;
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+.tradeoff--est {
+  border-left-color: var(--warn);
+}
+.chart-stop--est circle {
+  stroke-dasharray: 3 3;
+  stroke: var(--warn);
+}
+.chart-stop--est .chart-stop-num {
+  fill: var(--warn);
+}
+.chart-stop--est.is-active circle {
+  fill: var(--warn);
+}
+.chart-stop--est.is-active .chart-stop-num {
+  fill: var(--accent-ink);
+}
+.chart-other--est path {
+  stroke-dasharray: 2 2;
+}
+
+.estimating {
+  margin: -4px 0 12px;
+}
